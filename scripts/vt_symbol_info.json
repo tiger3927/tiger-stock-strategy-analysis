@@ -1,0 +1,922 @@
+{
+  "265598.SMART": {
+    "name": "Apple",
+    "name_cn": "苹果",
+    "ticker": "AAPL",
+    "conid": 265598,
+    "category": "科技巨头",
+    "industry": "信息技术 – 消费电子/软件",
+    "priority": "high"
+  },
+  "272093.SMART": {
+    "name": "Microsoft",
+    "name_cn": "微软",
+    "ticker": "MSFT",
+    "conid": 272093,
+    "category": "科技巨头",
+    "industry": "信息技术 – 企业软件/云服务",
+    "priority": "high"
+  },
+  "4815747.SMART": {
+    "name": "NVIDIA",
+    "name_cn": "英伟达",
+    "ticker": "NVDA",
+    "conid": 4815747,
+    "category": "科技巨头",
+    "industry": "信息技术 – 半导体/AI芯片",
+    "priority": "high"
+  },
+  "3691937.SMART": {
+    "name": "Amazon",
+    "name_cn": "亚马逊",
+    "ticker": "AMZN",
+    "conid": 3691937,
+    "category": "科技巨头",
+    "industry": "可选消费 – 电商/云服务",
+    "priority": "high"
+  },
+  "107113386.SMART": {
+    "name": "Meta Platforms",
+    "name_cn": "Meta",
+    "ticker": "META",
+    "conid": 107113386,
+    "category": "科技巨头",
+    "industry": "信息技术 – 社交媒体/元宇宙",
+    "priority": "high"
+  },
+  "208813719.SMART": {
+    "name": "Alphabet",
+    "name_cn": "谷歌A",
+    "ticker": "GOOGL",
+    "conid": 208813719,
+    "category": "科技巨头",
+    "industry": "信息技术 – 搜索/广告/AI",
+    "note": "有投票权",
+    "priority": "high"
+  },
+  "208813720.SMART": {
+    "name": "Alphabet",
+    "name_cn": "谷歌C",
+    "ticker": "GOOG",
+    "conid": 208813720,
+    "category": "科技巨头",
+    "industry": "信息技术 – 搜索/广告/AI",
+    "note": "无投票权",
+    "priority": "high"
+  },
+  "4391.SMART": {
+    "name": "Advanced Micro Devices",
+    "name_cn": "AMD",
+    "ticker": "AMD",
+    "conid": 4391,
+    "category": "科技巨头",
+    "industry": "信息技术 – 半导体",
+    "priority": "high"
+  },
+  "76792991.SMART": {
+    "name": "Tesla",
+    "name_cn": "特斯拉",
+    "ticker": "TSLA",
+    "conid": 76792991,
+    "category": "科技巨头",
+    "industry": "可选消费 – 电动汽车/能源",
+    "priority": "high"
+  },
+  "320227571.SMART": {
+    "name": "Invesco QQQ Trust",
+    "name_cn": "QQQ信托",
+    "ticker": "QQQ",
+    "conid": 320227571,
+    "category": "ETF",
+    "industry": "科技ETF",
+    "priority": "high"
+  },
+  "8719.SMART": {
+    "name": "Johnson & Johnson",
+    "name_cn": "强生",
+    "ticker": "JNJ",
+    "conid": 8719,
+    "category": "蓝筹股",
+    "industry": "医疗保健 – 制药/医疗器械",
+    "priority": "high"
+  },
+  "13824.SMART": {
+    "name": "Walmart",
+    "name_cn": "沃尔玛",
+    "ticker": "WMT",
+    "conid": 13824,
+    "category": "蓝筹股",
+    "industry": "必需消费 – 大型零售",
+    "priority": "high"
+  },
+  "5437.SMART": {
+    "name": "Caterpillar",
+    "name_cn": "卡特彼勒",
+    "ticker": "CAT",
+    "conid": 5437,
+    "category": "蓝筹股",
+    "industry": "工业 – 机械/基建设备",
+    "priority": "high"
+  },
+  "13272.SMART": {
+    "name": "UnitedHealth",
+    "name_cn": "联合健康",
+    "ticker": "UNH",
+    "conid": 13272,
+    "category": "蓝筹股",
+    "industry": "医疗保健 – 医保/健康服务",
+    "priority": "high"
+  },
+  "13977.SMART": {
+    "name": "ExxonMobil",
+    "name_cn": "美孚",
+    "ticker": "XOM",
+    "conid": 13977,
+    "category": "蓝筹股",
+    "industry": "能源 – 石油/天然气",
+    "priority": "high"
+  },
+  "11054.SMART": {
+    "name": "Procter & Gamble",
+    "name_cn": "宝洁",
+    "ticker": "PG",
+    "conid": 11054,
+    "category": "蓝筹股",
+    "industry": "必需消费 – 日用品",
+    "priority": "high"
+  },
+  "49462172.SMART": {
+    "name": "Visa",
+    "name_cn": "维萨",
+    "ticker": "V",
+    "conid": 49462172,
+    "category": "蓝筹股",
+    "industry": "金融 – 支付网络",
+    "priority": "high"
+  },
+  "38685693.SMART": {
+    "name": "Mastercard",
+    "name_cn": "万事达",
+    "ticker": "MA",
+    "conid": 38685693,
+    "category": "蓝筹股",
+    "industry": "金融 – 支付网络",
+    "priority": "high"
+  },
+  "9160.SMART": {
+    "name": "Eli Lilly",
+    "name_cn": "礼来",
+    "ticker": "LLY",
+    "conid": 9160,
+    "category": "强势非AI",
+    "industry": "医疗保健 – 制药",
+    "priority": "high"
+  },
+  "272997.SMART": {
+    "name": "Costco",
+    "name_cn": "好市多",
+    "ticker": "COST",
+    "conid": 272997,
+    "category": "强势非AI",
+    "industry": "必需消费 – 会员制仓储零售",
+    "priority": "high"
+  },
+  "498843743.SMART": {
+    "name": "GE Aerospace",
+    "name_cn": "通用航天",
+    "ticker": "GE",
+    "conid": 498843743,
+    "category": "强势非AI",
+    "industry": "工业 – 航空发动机",
+    "priority": "high"
+  },
+  "11080.SMART": {
+    "name": "Progressive",
+    "name_cn": "前进保险",
+    "ticker": "PGR",
+    "conid": 11080,
+    "category": "强势非AI",
+    "industry": "金融 – 车险/商保",
+    "priority": "high"
+  },
+  "1520593.SMART": {
+    "name": "JPMorgan",
+    "name_cn": "摩根大通",
+    "ticker": "JPM",
+    "conid": 1520593,
+    "category": "强势非AI",
+    "industry": "金融 – 银行业",
+    "priority": "high"
+  },
+  "75960201.SMART": {
+    "name": "NextEra",
+    "name_cn": "下一代能源",
+    "ticker": "NEE",
+    "conid": 75960201,
+    "category": "强势非AI",
+    "industry": "公用事业 – 绿能发电",
+    "priority": "high"
+  },
+  "313130367.SMART": {
+    "name": "Broadcom",
+    "name_cn": "博通",
+    "ticker": "AVGO",
+    "conid": 313130367,
+    "category": "强势非AI",
+    "industry": "信息技术 – 半导体/网络",
+    "priority": "high"
+  },
+  "7089.SMART": {
+    "name": "Freeport-McMoRan",
+    "name_cn": "自由港麦克莫兰",
+    "ticker": "FCX",
+    "conid": 7089,
+    "category": "强势非AI",
+    "industry": "材料 – 铜矿/黄金",
+    "priority": "high"
+  },
+  "6497.SMART": {
+    "name": "Moody's",
+    "name_cn": "穆迪",
+    "ticker": "MCO",
+    "conid": 6497,
+    "category": "强势非AI",
+    "industry": "金融 – 信用评级/数据",
+    "priority": "high"
+  },
+  "229629397.SMART": {
+    "name": "S&P Global",
+    "name_cn": "标普全球",
+    "ticker": "SPGI",
+    "conid": 229629397,
+    "category": "强势非AI",
+    "industry": "金融 – 指数/数据/评级",
+    "priority": "high"
+  },
+  "9063285.SMART": {
+    "name": "Intuitive Surgical",
+    "name_cn": "直觉外科",
+    "ticker": "ISRG",
+    "conid": 9063285,
+    "category": "强势非AI",
+    "industry": "医疗保健 – 手术机器人",
+    "priority": "high"
+  },
+  "272800.SMART": {
+    "name": "Oracle",
+    "name_cn": "甲骨文",
+    "ticker": "ORCL",
+    "conid": 272800,
+    "category": "强势非AI",
+    "industry": "信息技术 – 企业软件/云基建",
+    "priority": "high"
+  },
+  "265768.SMART": {
+    "name": "Adobe",
+    "name_cn": "奥多比",
+    "ticker": "ADBE",
+    "conid": 265768,
+    "category": "强势非AI",
+    "industry": "信息技术 – 创意软件/SaaS",
+    "priority": "high"
+  },
+  "444857009.SMART": {
+    "name": "Palantir",
+    "name_cn": "帕兰提尔",
+    "ticker": "PLTR",
+    "conid": 444857009,
+    "category": "强势非AI",
+    "industry": "信息技术 – AI数据平台/国防",
+    "priority": "high"
+  },
+  "732440574.SMART": {
+    "name": "Lam Research",
+    "name_cn": "泛林集团",
+    "ticker": "LRCX",
+    "conid": 732440574,
+    "category": "强势非AI",
+    "industry": "信息技术 – 半导体设备",
+    "priority": "high"
+  },
+  "29624264.SMART": {
+    "name": "Salesforce",
+    "name_cn": "赛富时",
+    "ticker": "CRM",
+    "conid": 29624264,
+    "category": "强势非AI",
+    "industry": "信息技术 – 企业SaaS/CRM",
+    "priority": "high"
+  },
+  "15124833.SMART": {
+    "name": "Netflix",
+    "name_cn": "奈飞",
+    "ticker": "NFLX",
+    "conid": 15124833,
+    "category": "强势非AI",
+    "industry": "通信服务 – 流媒体/娱乐内容",
+    "priority": "high"
+  },
+  "756733.SMART": {
+    "name": "SPDR S&P 500 ETF",
+    "name_cn": "标普500ETF",
+    "ticker": "SPY",
+    "conid": 756733,
+    "category": "指数ETF",
+    "industry": "大盘指数ETF",
+    "priority": "normal"
+  },
+  "73128548.SMART": {
+    "name": "SPDR Dow Jones ETF",
+    "name_cn": "道琼斯ETF",
+    "ticker": "DIA",
+    "conid": 73128548,
+    "category": "指数ETF",
+    "industry": "道琼斯指数ETF",
+    "priority": "normal"
+  },
+  "9579970.SMART": {
+    "name": "iShares Russell 2000 ETF",
+    "name_cn": "罗素2000ETF",
+    "ticker": "IWM",
+    "conid": 9579970,
+    "category": "指数ETF",
+    "industry": "小盘指数ETF",
+    "priority": "normal"
+  },
+  "136155102.SMART": {
+    "name": "Vanguard S&P 500 ETF",
+    "name_cn": "先锋标普500ETF",
+    "ticker": "VOO",
+    "conid": 136155102,
+    "category": "指数ETF",
+    "industry": "大盘指数ETF",
+    "priority": "normal"
+  },
+  "12340041.SMART": {
+    "name": "Vanguard Total Stock Market ETF",
+    "name_cn": "先锋全市场ETF",
+    "ticker": "VTI",
+    "conid": 12340041,
+    "category": "指数ETF",
+    "industry": "全市场指数ETF",
+    "priority": "normal"
+  },
+  "10098.SMART": {
+    "name": "Bank of America",
+    "name_cn": "美国银行",
+    "ticker": "BAC",
+    "conid": 10098,
+    "category": "金融",
+    "industry": "金融 – 银行业",
+    "priority": "normal"
+  },
+  "10375.SMART": {
+    "name": "Wells Fargo",
+    "name_cn": "富国银行",
+    "ticker": "WFC",
+    "conid": 10375,
+    "category": "金融",
+    "industry": "金融 – 银行业",
+    "priority": "normal"
+  },
+  "4627828.SMART": {
+    "name": "Goldman Sachs",
+    "name_cn": "高盛",
+    "ticker": "GS",
+    "conid": 4627828,
+    "category": "金融",
+    "industry": "金融 – 投资银行",
+    "priority": "normal"
+  },
+  "2841574.SMART": {
+    "name": "Morgan Stanley",
+    "name_cn": "摩根士丹利",
+    "ticker": "MS",
+    "conid": 2841574,
+    "category": "金融",
+    "industry": "金融 – 投资银行",
+    "priority": "normal"
+  },
+  "87335484.SMART": {
+    "name": "Citigroup",
+    "name_cn": "花旗集团",
+    "ticker": "C",
+    "conid": 87335484,
+    "category": "金融",
+    "industry": "金融 – 银行业",
+    "priority": "normal"
+  },
+  "4721.SMART": {
+    "name": "American Express",
+    "name_cn": "美国运通",
+    "ticker": "AXP",
+    "conid": 4721,
+    "category": "金融",
+    "industry": "金融 – 信用卡/支付",
+    "priority": "normal"
+  },
+  "729193719.SMART": {
+    "name": "BlackRock",
+    "name_cn": "贝莱德",
+    "ticker": "BLK",
+    "conid": 729193719,
+    "category": "金融",
+    "industry": "金融 – 资产管理",
+    "priority": "normal"
+  },
+  "5684.SMART": {
+    "name": "Chevron",
+    "name_cn": "雪佛龙",
+    "ticker": "CVX",
+    "conid": 5684,
+    "category": "能源",
+    "industry": "能源 – 石油/天然气",
+    "priority": "normal"
+  },
+  "10885.SMART": {
+    "name": "ConocoPhillips",
+    "name_cn": "康菲石油",
+    "ticker": "COP",
+    "conid": 10885,
+    "category": "能源",
+    "industry": "能源 – 石油/天然气",
+    "priority": "normal"
+  },
+  "12200.SMART": {
+    "name": "Schlumberger",
+    "name_cn": "斯伦贝谢",
+    "ticker": "SLB",
+    "conid": 12200,
+    "category": "能源",
+    "industry": "能源 – 油田服务",
+    "priority": "normal"
+  },
+  "10880.SMART": {
+    "name": "Occidental Petroleum",
+    "name_cn": "西方石油",
+    "ticker": "OXY",
+    "conid": 10880,
+    "category": "能源",
+    "industry": "能源 – 石油/天然气",
+    "priority": "normal"
+  },
+  "89495776.SMART": {
+    "name": "Marathon Petroleum",
+    "name_cn": "马拉松石油",
+    "ticker": "MPC",
+    "conid": 89495776,
+    "category": "能源",
+    "industry": "能源 – 炼油",
+    "priority": "normal"
+  },
+  "11031.SMART": {
+    "name": "Pfizer",
+    "name_cn": "辉瑞",
+    "ticker": "PFE",
+    "conid": 11031,
+    "category": "医疗保健",
+    "industry": "医疗保健 – 制药",
+    "priority": "normal"
+  },
+  "70101545.SMART": {
+    "name": "Merck",
+    "name_cn": "默克",
+    "ticker": "MRK",
+    "conid": 70101545,
+    "category": "医疗保健",
+    "industry": "医疗保健 – 制药",
+    "priority": "normal"
+  },
+  "4065.SMART": {
+    "name": "Abbott Laboratories",
+    "name_cn": "雅培",
+    "ticker": "ABT",
+    "conid": 4065,
+    "category": "医疗保健",
+    "industry": "医疗保健 – 医疗器械/诊断",
+    "priority": "normal"
+  },
+  "12869.SMART": {
+    "name": "Thermo Fisher Scientific",
+    "name_cn": "赛默飞世尔",
+    "ticker": "TMO",
+    "conid": 12869,
+    "category": "医疗保健",
+    "industry": "医疗保健 – 生命科学工具",
+    "priority": "normal"
+  },
+  "6442.SMART": {
+    "name": "Danaher",
+    "name_cn": "丹纳赫",
+    "ticker": "DHR",
+    "conid": 6442,
+    "category": "医疗保健",
+    "industry": "医疗保健 – 生命科学/诊断",
+    "priority": "normal"
+  },
+  "8894.SMART": {
+    "name": "Coca-Cola",
+    "name_cn": "可口可乐",
+    "ticker": "KO",
+    "conid": 8894,
+    "category": "消费",
+    "industry": "必需消费 – 饮料",
+    "priority": "normal"
+  },
+  "11017.SMART": {
+    "name": "PepsiCo",
+    "name_cn": "百事可乐",
+    "ticker": "PEP",
+    "conid": 11017,
+    "category": "消费",
+    "industry": "必需消费 – 饮料/食品",
+    "priority": "normal"
+  },
+  "9408.SMART": {
+    "name": "McDonald's",
+    "name_cn": "麦当劳",
+    "ticker": "MCD",
+    "conid": 9408,
+    "category": "消费",
+    "industry": "可选消费 – 餐饮",
+    "priority": "normal"
+  },
+  "274105.SMART": {
+    "name": "Starbucks",
+    "name_cn": "星巴克",
+    "ticker": "SBUX",
+    "conid": 274105,
+    "category": "消费",
+    "industry": "可选消费 – 餐饮",
+    "priority": "normal"
+  },
+  "10291.SMART": {
+    "name": "Nike",
+    "name_cn": "耐克",
+    "ticker": "NKE",
+    "conid": 10291,
+    "category": "消费",
+    "industry": "可选消费 – 服装/鞋类",
+    "priority": "normal"
+  },
+  "4762.SMART": {
+    "name": "Boeing",
+    "name_cn": "波音",
+    "ticker": "BA",
+    "conid": 4762,
+    "category": "工业",
+    "industry": "工业 – 航空航天/国防",
+    "priority": "normal"
+  },
+  "4350.SMART": {
+    "name": "Honeywell",
+    "name_cn": "霍尼韦尔",
+    "ticker": "HON",
+    "conid": 4350,
+    "category": "工业",
+    "industry": "工业 – 多元化工业",
+    "priority": "normal"
+  },
+  "6231002.SMART": {
+    "name": "United Parcel Service",
+    "name_cn": "联合包裹",
+    "ticker": "UPS",
+    "conid": 6231002,
+    "category": "工业",
+    "industry": "工业 – 物流/快递",
+    "priority": "normal"
+  },
+  "415342104.SMART": {
+    "name": "RTX Corporation",
+    "name_cn": "雷神技术",
+    "ticker": "RTX",
+    "conid": 415342104,
+    "category": "工业",
+    "industry": "工业 – 航空航天/国防",
+    "priority": "normal"
+  },
+  "611191.SMART": {
+    "name": "Lockheed Martin",
+    "name_cn": "洛克希德马丁",
+    "ticker": "LMT",
+    "conid": 611191,
+    "category": "工业",
+    "industry": "工业 – 航空航天/国防",
+    "priority": "normal"
+  },
+  "270639.SMART": {
+    "name": "Intel",
+    "name_cn": "英特尔",
+    "ticker": "INTC",
+    "conid": 270639,
+    "category": "科技",
+    "industry": "信息技术 – 半导体",
+    "priority": "normal"
+  },
+  "273544.SMART": {
+    "name": "Qualcomm",
+    "name_cn": "高通",
+    "ticker": "QCOM",
+    "conid": 273544,
+    "category": "科技",
+    "industry": "信息技术 – 半导体/无线通信",
+    "priority": "normal"
+  },
+  "13096.SMART": {
+    "name": "Texas Instruments",
+    "name_cn": "德州仪器",
+    "ticker": "TXN",
+    "conid": 13096,
+    "category": "科技",
+    "industry": "信息技术 – 半导体",
+    "priority": "normal"
+  },
+  "266093.SMART": {
+    "name": "Applied Materials",
+    "name_cn": "应用材料",
+    "ticker": "AMAT",
+    "conid": 266093,
+    "category": "科技",
+    "industry": "信息技术 – 半导体设备",
+    "priority": "normal"
+  },
+  "9939.SMART": {
+    "name": "Micron Technology",
+    "name_cn": "美光科技",
+    "ticker": "MU",
+    "conid": 9939,
+    "category": "科技",
+    "industry": "信息技术 – 半导体存储",
+    "priority": "normal"
+  },
+  "4901.SMART": {
+    "name": "Verizon",
+    "name_cn": "威瑞森",
+    "ticker": "VZ",
+    "conid": 4901,
+    "category": "通信",
+    "industry": "通信服务 – 电信运营商",
+    "priority": "normal"
+  },
+  "37018770.SMART": {
+    "name": "AT&T",
+    "name_cn": "美国电话电报",
+    "ticker": "T",
+    "conid": 37018770,
+    "category": "通信",
+    "industry": "通信服务 – 电信运营商",
+    "priority": "normal"
+  },
+  "267748.SMART": {
+    "name": "Comcast",
+    "name_cn": "康卡斯特",
+    "ticker": "CMCSA",
+    "conid": 267748,
+    "category": "通信",
+    "industry": "通信服务 – 有线电视/宽带",
+    "priority": "normal"
+  },
+  "6459.SMART": {
+    "name": "Walt Disney",
+    "name_cn": "迪士尼",
+    "ticker": "DIS",
+    "conid": 6459,
+    "category": "通信",
+    "industry": "通信服务 – 娱乐/媒体",
+    "priority": "normal"
+  },
+  "110176011.SMART": {
+    "name": "Duke Energy",
+    "name_cn": "杜克能源",
+    "ticker": "DUK",
+    "conid": 110176011,
+    "category": "公用事业",
+    "industry": "公用事业 – 电力",
+    "priority": "normal"
+  },
+  "4215230.SMART": {
+    "name": "Technology Select Sector SPDR",
+    "name_cn": "科技行业ETF",
+    "ticker": "XLK",
+    "conid": 4215230,
+    "category": "行业ETF",
+    "industry": "科技行业ETF",
+    "priority": "normal"
+  },
+  "4215220.SMART": {
+    "name": "Financial Select Sector SPDR",
+    "name_cn": "金融行业ETF",
+    "ticker": "XLF",
+    "conid": 4215220,
+    "category": "行业ETF",
+    "industry": "金融行业ETF",
+    "priority": "normal"
+  },
+  "4215217.SMART": {
+    "name": "Energy Select Sector SPDR",
+    "name_cn": "能源行业ETF",
+    "ticker": "XLE",
+    "conid": 4215217,
+    "category": "行业ETF",
+    "industry": "能源行业ETF",
+    "priority": "normal"
+  },
+  "4215205.SMART": {
+    "name": "Health Care Select Sector SPDR",
+    "name_cn": "医疗保健ETF",
+    "ticker": "XLV",
+    "conid": 4215205,
+    "category": "行业ETF",
+    "industry": "医疗保健ETF",
+    "priority": "normal"
+  },
+  "4215227.SMART": {
+    "name": "Industrial Select Sector SPDR",
+    "name_cn": "工业行业ETF",
+    "ticker": "XLI",
+    "conid": 4215227,
+    "category": "行业ETF",
+    "industry": "工业行业ETF",
+    "priority": "normal"
+  },
+  "4215235.SMART": {
+    "name": "Utilities Select Sector SPDR",
+    "name_cn": "公用事业ETF",
+    "ticker": "XLU",
+    "conid": 4215235,
+    "category": "行业ETF",
+    "industry": "公用事业ETF",
+    "priority": "normal"
+  },
+  "4215210.SMART": {
+    "name": "Consumer Staples Select Sector SPDR",
+    "name_cn": "必需消费ETF",
+    "ticker": "XLP",
+    "conid": 4215210,
+    "category": "行业ETF",
+    "industry": "必需消费ETF",
+    "priority": "normal"
+  },
+  "4215200.SMART": {
+    "name": "Materials Select Sector SPDR",
+    "name_cn": "材料行业ETF",
+    "ticker": "XLB",
+    "conid": 4215200,
+    "category": "行业ETF",
+    "industry": "材料行业ETF",
+    "priority": "normal"
+  },
+  "51529211.SMART": {
+    "name": "SPDR Gold Shares",
+    "name_cn": "黄金ETF",
+    "ticker": "GLD",
+    "conid": 51529211,
+    "category": "商品ETF",
+    "industry": "黄金ETF",
+    "priority": "normal"
+  },
+  "418893644.SMART": {
+    "name": "United States Oil Fund",
+    "name_cn": "原油ETF",
+    "ticker": "USO",
+    "conid": 418893644,
+    "category": "商品ETF",
+    "industry": "原油ETF",
+    "priority": "normal"
+  },
+  "39039301.SMART": {
+    "name": "iShares Silver Trust",
+    "name_cn": "白银ETF",
+    "ticker": "SLV",
+    "conid": 39039301,
+    "category": "商品ETF",
+    "industry": "白银ETF",
+    "priority": "normal"
+  },
+  "15547841.SMART": {
+    "name": "iShares 20+ Year Treasury Bond ETF",
+    "name_cn": "长期国债ETF",
+    "ticker": "TLT",
+    "conid": 15547841,
+    "category": "债券ETF",
+    "industry": "长期国债ETF",
+    "priority": "normal"
+  },
+  "43652089.SMART": {
+    "name": "iShares iBoxx High Yield Bond ETF",
+    "name_cn": "高收益债ETF",
+    "ticker": "HYG",
+    "conid": 43652089,
+    "category": "债券ETF",
+    "industry": "高收益债ETF",
+    "priority": "normal"
+  },
+  "15547816.SMART": {
+    "name": "iShares iBoxx Investment Grade Bond ETF",
+    "name_cn": "投资级债ETF",
+    "ticker": "LQD",
+    "conid": 15547816,
+    "category": "债券ETF",
+    "industry": "投资级债ETF",
+    "priority": "normal"
+  },
+  "10209369.SMART": {
+    "name": "iShares U.S. Real Estate ETF",
+    "name_cn": "房地产ETF",
+    "ticker": "IYR",
+    "conid": 10209369,
+    "category": "房地产ETF",
+    "industry": "房地产ETF",
+    "priority": "normal"
+  },
+  "12300.SMART": {
+    "name": "Southern Company",
+    "name_cn": "南方电力",
+    "ticker": "SO",
+    "conid": 12300,
+    "category": "公用事业",
+    "industry": "公用事业 – 电力",
+    "priority": "normal"
+  },
+  "4211.SMART": {
+    "name": "American Electric Power",
+    "name_cn": "美国电力",
+    "ticker": "AEP",
+    "conid": 4211,
+    "category": "公用事业",
+    "industry": "公用事业 – 电力",
+    "priority": "normal"
+  },
+  "11000.SMART": {
+    "name": "Exelon",
+    "name_cn": "艾斯能",
+    "ticker": "EXC",
+    "conid": 11000,
+    "category": "公用事业",
+    "industry": "公用事业 – 电力/天然气",
+    "priority": "normal"
+  },
+  "11020.SMART": {
+    "name": "Sempra Energy",
+    "name_cn": "森普拉能源",
+    "ticker": "SRE",
+    "conid": 11020,
+    "category": "公用事业",
+    "industry": "公用事业 – 电力/天然气",
+    "priority": "normal"
+  },
+  "99831145.SMART": {
+    "name": "American Tower",
+    "name_cn": "美国电塔",
+    "ticker": "AMT",
+    "conid": 99831145,
+    "category": "房地产REITs",
+    "industry": "房地产 – 通信基础设施",
+    "priority": "normal"
+  },
+  "88819288.SMART": {
+    "name": "Prologis",
+    "name_cn": "安博",
+    "ticker": "PLD",
+    "conid": 88819288,
+    "category": "房地产REITs",
+    "industry": "房地产 – 物流仓储",
+    "priority": "normal"
+  },
+  "176571182.SMART": {
+    "name": "Crown Castle",
+    "name_cn": "皇冠城堡",
+    "ticker": "CCI",
+    "conid": 176571182,
+    "category": "房地产REITs",
+    "industry": "房地产 – 通信基础设施",
+    "priority": "normal"
+  },
+  "181764593.SMART": {
+    "name": "Equinix",
+    "name_cn": "Equinix",
+    "ticker": "EQIX",
+    "conid": 181764593,
+    "category": "房地产REITs",
+    "industry": "房地产 – 数据中心",
+    "priority": "normal"
+  },
+  "10672.SMART": {
+    "name": "Realty Income",
+    "name_cn": "Realty Income",
+    "ticker": "O",
+    "conid": 10672,
+    "category": "房地产REITs",
+    "industry": "房地产 – 零售物业",
+    "priority": "normal"
+  },
+  "207739931.SMART": {
+    "name": "Welltower",
+    "name_cn": "Welltower",
+    "ticker": "WELL",
+    "conid": 207739931,
+    "category": "房地产REITs",
+    "industry": "房地产 – 医疗设施",
+    "priority": "normal"
+  }
+}
