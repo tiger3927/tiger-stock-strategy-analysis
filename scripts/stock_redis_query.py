@@ -39,9 +39,9 @@ from typing import Dict, List, Any, Optional
 sys.path.insert(0, r'E:\veighna_studio_43\Lib\site-packages')
 
 # 从 vnpy 配置中读取设置
-from vnpy.trader.setting import SETTINGS
+from tools import load_json
 
-
+settings=load_json("./scripts/setting.json")
 class StockClassifier:
     """股票分类器 - 从 vt_symbol_info.json 提取分类信息"""
 
@@ -144,9 +144,9 @@ class RedisWebAPI:
     """Redis Web API 客户端"""
 
     def __init__(self):
-        self.base_url = SETTINGS.get("http_redis_proxy_url", "https://ai4.newgoai.com/")
-        self.db = SETTINGS.get("http_redis_proxy_db", 11)
-        self.api_key = SETTINGS.get("http_redis_proxy_apikey", "nokey")
+        self.base_url = settings.get("http_redis_proxy_url", "https://ai4.newgoai.com/")
+        self.db = settings.get("http_redis_proxy_db", 11)
+        self.api_key = settings.get("http_redis_proxy_apikey", "nokey")
         if not self.base_url.endswith('/'):
             self.base_url += '/'
 
