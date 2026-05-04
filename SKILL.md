@@ -127,7 +127,7 @@ python scripts/stock_redis_query.py --username <用户名> --type strategy
 
 ## 输出
 
-- 采用 json 格式，结构清晰
+- 采用 json 格式返回结果，结构清晰
 - 具体字段必须符合策略中的具体要求
 - 要区分分析任务和下单前审核任务
 
