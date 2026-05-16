@@ -35,15 +35,12 @@ import argparse
 from collections import defaultdict
 from typing import Dict, List, Any, Optional
 
-# 添加 vnpy 库路径
-sys.path.insert(0, r'E:\veighna_studio_43\Lib\site-packages')
-
-# 从 vnpy 配置中读取设置
 import sys
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from tools import load_json
 
-settings=load_json("./scripts/setting.json")
+settings=load_json(os.path.join(os.path.dirname(os.path.abspath(__file__)),"setting.json"))
 class StockClassifier:
     """股票分类器 - 从 vt_symbol_info.json 提取分类信息"""
 
@@ -261,12 +258,13 @@ class StockRedisQuery:
                                     'available': available
                                 })
                                 break
-
-                    # 分析持仓
-                    positions_info = self._analyze_positions(data)
-                    user_stats[username]['total_position_value'] += positions_info['total_position_value']
                 except:
                     pass
+
+        # 从策略数据获取持仓市值
+        for username in user_stats:
+            positions_info = self._get_positions_from_strategies(username)
+            user_stats[username]['total_position_value'] = positions_info['total_position_value']
 
         print(f"\n找到 {len(user_stats)} 个用户\n")
         for username, stats in sorted(user_stats.items()):
@@ -295,13 +293,12 @@ class StockRedisQuery:
             print(f"\n【账户类型: {account_type}】")
 
             total_balance = 0.0
-            total_position_value = 0.0
             
             if value and isinstance(value, str):
                 try:
                     data = json.loads(value)
 
-                    # 子账户信息
+                    # 子账户信息（仅保留账户资金信息）
                     if 'account' in data and isinstance(data['account'], dict):
                         print("\n  子账户明细:")
                         for acc_key, acc_data in data['account'].items():
@@ -310,32 +307,37 @@ class StockRedisQuery:
                                 available = float(acc_data.get('available', 0))
                                 frozen = float(acc_data.get('frozen', 0))
                                 print(f"    {acc_key}: balance=${balance:,.2f}, available=${available:,.2f}, frozen=${frozen:,.2f}")
-                                if 'USD' in acc_key:
+                                # 取可用资金不为0的账户的balance作为总资产
+                                if available > 0:
                                     total_balance = balance
 
-                    # 持仓信息
-                    positions_info = self._analyze_positions(data)
-                    total_position_value = positions_info['total_position_value']
-                    if positions_info['total_position_count'] > 0:
-                        print(f"\n  持仓品种数: {positions_info['total_position_count']}")
-                        print(f"  持仓总市值: ${positions_info['total_position_value']:,.2f}")
-                        print(f"\n  持仓明细:")
-                        sorted_positions = sorted(positions_info['positions'], key=lambda x: x['value'], reverse=True)
-                        for i, pos in enumerate(sorted_positions, 1):
-                            stock_name = self.classifier.get_stock_display_name(str(pos['symbol']))
-                            print(f"    [{i}] {stock_name}: {pos['volume']:,.2f}股 × ${pos['price']:,.2f} = ${pos['value']:,.2f}")
-                    else:
-                        print("\n  无持仓")
-
-                    # 总资产
-                    total_assets = total_balance + total_position_value
-                    print(f"\n  【资产汇总】")
-                    print(f"  账户余额: ${total_balance:,.2f}")
-                    print(f"  持仓市值: ${total_position_value:,.2f}")
-                    print(f"  总资产: ${total_assets:,.2f}")
-
                 except json.JSONDecodeError:
-                    print("  解析失败")
+                    print("  账户数据解析失败")
+
+        # 从策略数据获取持仓信息
+        positions_info = self._get_positions_from_strategies(username)
+        total_position_value = positions_info['total_position_value']
+
+        if positions_info['total_position_count'] > 0:
+            print(f"\n  持仓品种数: {positions_info['total_position_count']}")
+            print(f"  持仓总市值: ${positions_info['total_position_value']:,.2f}")
+            print(f"\n  持仓明细（来自策略数据）:")
+            sorted_positions = sorted(positions_info['positions'], key=lambda x: x['value'], reverse=True)
+            for i, pos in enumerate(sorted_positions, 1):
+                stock_name = self.classifier.get_stock_display_name(str(pos['symbol']))
+                strategies_str = ', '.join(pos['strategies'])
+                print(f"    [{i}] {stock_name}")
+                print(f"        持仓: {pos['volume']:,.2f}股 × ${pos['current_price']:,.2f} = ${pos['value']:,.2f}")
+                print(f"        均价: ${pos['avg_price']:,.2f}, 盈亏: {pos['pnl_ratio']*100:+.2f}%")
+                print(f"        策略: {strategies_str}")
+                print()
+        else:
+            print("\n  无持仓")
+
+        # 总资产
+        print(f"  【资产汇总】")
+        print(f"  持仓市值: ${total_position_value:,.2f}")
+        print(f"  总资产: ${total_balance:,.2f}")
 
     def strategies(self, username: str):
         """3. 查指定账户策略列表和概要"""
@@ -413,45 +415,26 @@ class StockRedisQuery:
         print(f"持仓分布 - {username}")
         print("=" * 70)
 
-        accounts = self.client.get_value_by_pattern(username=username, data_type="account")
-        if not accounts:
-            print(f"\n未找到 {username} 的账户数据")
-            return
-
-        all_positions = []
-        total_value = 0.0
-
-        for item in accounts:
-            value = item['value']
-            if value and isinstance(value, str):
-                try:
-                    data = json.loads(value)
-                    positions_info = self._analyze_positions(data)
-                    all_positions.extend(positions_info['positions'])
-                    total_value += positions_info['total_position_value']
-                except:
-                    pass
+        # 从策略数据获取持仓信息
+        positions_info = self._get_positions_from_strategies(username)
+        all_positions = positions_info['positions']
+        total_value = positions_info['total_position_value']
 
         if not all_positions:
             print("\n无持仓")
             return
 
-        # 合并相同品种
-        symbol_totals = defaultdict(lambda: {'volume': 0.0, 'value': 0.0})
-        for pos in all_positions:
-            symbol_totals[pos['symbol']]['volume'] += pos['volume']
-            symbol_totals[pos['symbol']]['value'] += pos['value']
-
         # 按分类统计
         category_stats = defaultdict(lambda: {'value': 0.0, 'symbols': []})
-        for symbol, totals in symbol_totals.items():
-            stock_name = self.classifier.get_stock_display_name(str(symbol))
-            category = self.classifier.get_category_by_symbol(str(symbol))
-            category_stats[category]['value'] += totals['value']
+        for pos in all_positions:
+            stock_name = self.classifier.get_stock_display_name(str(pos['symbol']))
+            category = self.classifier.get_category_by_symbol(str(pos['symbol']))
+            category_stats[category]['value'] += pos['value']
             category_stats[category]['symbols'].append({
                 'name': stock_name,
-                'volume': totals['volume'],
-                'value': totals['value']
+                'volume': pos['volume'],
+                'value': pos['value'],
+                'strategies': pos['strategies']
             })
 
         print(f"\n总持仓市值: ${total_value:,.2f}\n")
@@ -462,7 +445,9 @@ class StockRedisQuery:
             print(f"【{category}】${stats['value']:,.2f} ({percentage:.1f}%)")
             for s in sorted(stats['symbols'], key=lambda x: x['value'], reverse=True):
                 sp = (s['value'] / total_value * 100) if total_value > 0 else 0
+                strategies_str = ', '.join(s['strategies'])
                 print(f"  {s['name']}: {s['volume']:,.2f}股 = ${s['value']:,.2f} ({sp:.1f}%)")
+                print(f"    策略: {strategies_str}")
             print()
 
     def detail(self, username: str, strategy_name: str):
@@ -530,8 +515,83 @@ class StockRedisQuery:
         except json.JSONDecodeError as e:
             print(f"JSON 解析失败: {e}")
 
+    def _get_positions_from_strategies(self, username: str) -> dict:
+        """从策略数据中获取持仓信息（按品种合并）"""
+        strategies = self.client.get_value_by_pattern(username=username, data_type="strategy")
+
+        # 按品种聚合策略持仓
+        symbol_strategies = defaultdict(list)
+
+        for item in strategies:
+            value = item['value']
+            strategy_name = item['key_info']['data_source']
+
+            if value and isinstance(value, str):
+                try:
+                    data = json.loads(value)
+                    position = float(data.get('实际持仓', 0))
+
+                    if position > 0:
+                        avg_price = float(data.get('持仓均价', 0))
+                        current_price = float(data.get('当前行情价格', 0))
+                        pnl_ratio = float(data.get('当前持仓盈亏比', 0))
+                        vt_symbol = data.get('vt_symbol', '')
+                        symbol = vt_symbol.split('.')[0] if '.' in vt_symbol else vt_symbol
+
+                        position_value = position * current_price
+
+                        symbol_strategies[symbol].append({
+                            'strategy_name': strategy_name,
+                            'volume': position,
+                            'avg_price': avg_price,
+                            'current_price': current_price,
+                            'value': position_value,
+                            'pnl_ratio': pnl_ratio,
+                            'vt_symbol': vt_symbol
+                        })
+                except:
+                    continue
+
+        # 合并同一品种
+        positions = []
+        total_value = 0.0
+
+        for symbol, strategies_list in symbol_strategies.items():
+            total_volume = sum(s['volume'] for s in strategies_list)
+            total_position_value = sum(s['value'] for s in strategies_list)
+
+            # 加权平均持仓均价
+            total_cost = sum(s['volume'] * s['avg_price'] for s in strategies_list)
+            weighted_avg_price = total_cost / total_volume if total_volume > 0 else 0
+
+            # 加权平均盈亏比
+            total_pnl_value = sum(s['volume'] * s['pnl_ratio'] for s in strategies_list)
+            weighted_pnl_ratio = total_pnl_value / total_volume if total_volume > 0 else 0
+
+            strategy_names = [s['strategy_name'] for s in strategies_list]
+            current_price = strategies_list[0]['current_price'] if strategies_list else 0
+            vt_symbol = strategies_list[0]['vt_symbol'] if strategies_list else symbol
+
+            positions.append({
+                'symbol': symbol,
+                'volume': total_volume,
+                'avg_price': weighted_avg_price,
+                'current_price': current_price,
+                'value': total_position_value,
+                'pnl_ratio': weighted_pnl_ratio,
+                'strategies': strategy_names,
+                'vt_symbol': vt_symbol
+            })
+            total_value += total_position_value
+
+        return {
+            'positions': positions,
+            'total_position_value': total_value,
+            'total_position_count': len(positions)
+        }
+
     def _analyze_positions(self, data: dict) -> dict:
-        """分析账户持仓"""
+        """分析账户持仓（备用方法）"""
         positions_info = {
             'positions': [],
             'total_position_value': 0.0,

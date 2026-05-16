@@ -1,39 +1,42 @@
 ---
 name: "tiger-stock-strategy-analysis"
-description: "股票量化策略分析工具：为 vnpy 量化软件提供策略分析和下单前审核。支持智能马丁格尔策略、智能短期趋势策略；可查询用户 redis 上的vnpy的量化交易账户信息、策略执行信息。无需 API key。"
+description: "股票量化策略分析工具：为 vnpy 量化软件提供策略分析和下单前审核。支持智能马丁格尔策略(openclaw-martin)、智能短期趋势策略(openclaw-trend)；可查询用户 redis 上的vnpy的量化交易账户信息、策略执行信息。无需 API key。"
 ---
 
 # tiger-stock-strategy-analysis
 
 为 vnpy 量化系统提供策略分析，趋势预测，下单前审核！
 当执行的策略是本技能涉及的策略类型，你必须打开相应策略类型的文档，了解策略的具体方法，而后思考。
-如果不是本技能支持的策略类型，应该明确的提示给用户。
+如果用户要求分析的策略，不是本技能支持的策略类型，应该明确的提示给用户。
+
+## vt_symbol产品代码表，与盈透conid，对照查询
+
+策略信息中的产品代码是 vnpy 专属格式的时候，如 265598.SMART ，对照此文档，获得股票名称，分类：
+
+参考
+[scripts/vt_symbol_info.json](scripts/vt_symbol_info.json)
 
 
-## 信息获取策略（缓存优先 + 增量更新）
+## 信息获取方法（缓存优先 + 增量更新）
 
-### 第一步：检查本地存档
-路径规则 : [工作区]/stock_data/[vt_symbol]/
+### 尽量用如下外部技能获取股票的信息
 
-使用条件 :
+1. 用到的相关的外部技能skill矩阵，（以 QQQ ETF 为标的）：
 
-- 目录存在
-- 里面的 .md 文件 时间在 3 小时内
-→ 满足条件就直接读取， 不再联网查询
+| # | 要使用的外部技能名称 | 可采用 | 可能的信息结果 | 备注 |
+|---|----------|------|-------------|------|
+| 1 | `web_search` | ✅ | Barchart, TradingView, TipRanks 数据聚合 |  |
+| 2 | `yahoo-finance` (yfinance) | ✅ | $711.23, MA50=$620.91, MA200=$607.31, YTD+40% | **核心数据源** |
+| 3 | `us-stock-analysis` | ✅ | 技术分析框架 + 指标解读 | 搭配 web_search |
+| 4 | `agent-reach` (X/Twitter) | ✅ | QQQ Options/May OPEX 讨论 | 舆情分析 |
+| 5 | `agent-reach` (Reddit) | ✅ | r/ETFs/r/QQQ社区热度 | 社区情绪 |
+| 6 | `deep-research-pro` | ✅ | 深度分析 | 基本面逻辑 |
+| 7 | `multi-search-engine` | ✅ | TradingView/TipRanks/Barchart交叉验证 | 多源确认 |
+| 8 | `tavily` | ✅ | 指标，价格，综合信息 | 价格目标 |
+| 9 | `qveris` | ✅ | 行情采集与信息手机 | **独立行情 API** |
+| 10 | `ddg-search` | ✅ | 信息收集 | DuckDuckGo HTML |
 
-### 第二步：存档不足时，才进行信息采集
-
-如果本地没有存档，或者该类信息的存档超过 3 小时，则需要：
-
-1. 调用各种技能获取信息
-- us-stock-analysis
-- yahoo-finance
-- qveris
-- agent-reach
-- tavily-search
-- 等其他联网金融查询技能
-
-2. 必须采集的信息维度（10项）
+2. 分析股票等的交易策略，必须获取的信息维度（10项）
 
 | 序号 | 信息类型 |
 |------|----------|
@@ -48,8 +51,24 @@ description: "股票量化策略分析工具：为 vnpy 量化软件提供策略
 | 9 | 策略本次持仓的历史交易记录 |
 | 10 | 市场环境、行业环境、事件风险 |
 
-### 第三步：存档采集结果
-存档位置 : [工作区]/stock_data/[vt_symbol]/[信息类别___时间命名的].md
+### 查询的信息存档
+
+路径规则 : [工作区]/stock_data/[vt_symbol]/
+分为每种技能获取的信息，对应不同的存档md文件
+
+| 外部技能名称 | 文档名称 | 文档用途：以QQQ指数产品为例 |
+|----------|----------|----------|
+| web_search | web_search.md | 归集Barchart、TradingView、TipRanks等平台数据聚合信息，用于美股相关公开数据检索采集 |
+| yahoo-finance（yfinance） | yahoo-finance.md | 作为核心数据源，存储个股价格、50日均线、200日均线、YTD涨幅等实时行情数据 |
+| us-stock-analysis | us-stock-analysis.md | 整理美股技术分析框架及各类技术指标解读逻辑，配合web_search做行情深度分析 |
+| agent-reach（X/Twitter） | agent-reach-twitter.md | 采集X/Twitter平台QQQ期权、五月期权到期相关市场讨论，用于市场舆情分析归档 |
+| agent-reach（Reddit） | agent-reach-reddit.md | 收录r/ETFs、r/QQQ等社区讨论内容与热度数据，记录美股社区情绪风向 |
+| deep-research-pro | deep-research-pro.md | 整理个股及行业深度研究内容，沉淀基本面分析逻辑与投资逻辑框架 |
+| multi-search-engine | multi-search-engine.md | 记录TradingView、TipRanks、Barchart多平台数据交叉验证方法与结果，保障信息准确性 |
+| tavily | tavily.md | 汇总行情指标、标的价格、市场综合资讯，整理机构价格目标预测相关信息 |
+| qveris | qveris.md | 独立行情API专用文档，归集行情自动采集、资讯信息抓取的接口规则与数据结果 |
+| ddg-search | ddg-search.md | 留存DuckDuckGo网页检索原始HTML信息，用于泛市场资讯收集与原始素材归档 |
+
 
 重要规则 :
 
@@ -57,95 +76,26 @@ description: "股票量化策略分析工具：为 vnpy 量化软件提供策略
 - ❌ 不存：策略的当前信息（持仓、成本等），因为不同策略要复用这些外部数据
 质量门槛 : 如果觉得信息收集不够全面或者质量较差， 不要写这个 md 文件
 
-
 ## 信息获取优先级（从高到低）
 
-### 第一优先：上下文中的最新信息
-> "如果策略在执行中，上下文中应当有策略最新的执行信息，你可以直接使用。"
+### 上下文中的策略状态信息
+"如果策略在执行中，会在上下文中提供执行策略状态信息"
 
-**含义**：vnpy 实时提交的数据是最新鲜、最准确的，优先使用。
+### 用外部技能联网查询分析的信息
 
+### Redis API 查询
+如需要了解量化交易系统的持仓全貌，你可以从 redis api 查询整个量化交易系统的最新信息。
 
-
-### 第二优先：Redis API 查询
-> "如果没有最新的执行信息，你可以从 redis api 查询最新信息。"
-
-**含义**：当上下文没有数据时，才退而求其次查 Redis api。
-
-
-
-### 重要提示
-> "（非实时，仅为辅助，应当以上下文中 vnpy 提交的即时信息为主）"
-
-**强调了两次**：Redis Api 数据只是**辅助**，**非实时**，不能替代 vnpy 的即时信息。
-
-
-
-### 查询方式
-
-举例：
-
-1. 查询特定用户的vnpy量化交易账户信息
-
-直接采用命令行方式，带特定参数！
-不要尝试用API或者编写新代码，因为命令行中的代码是完善可用的。
-
-** 特别注意 ** ：账户的现金余额（balance）其实就是总资产，是包含持仓用的保证金在内的金额，不是剩下的现金金额。
-
-```bash
-cd <技能目录>
-python scripts/stock_redis_query.py overview              # 1. 查所有账户概览
-python scripts/stock_redis_query.py account "用户名"         # 2. 查指定账户信息和持仓
-python scripts/stock_redis_query.py strategies "用户名"      # 3. 查指定账户策略列表和概要
-python scripts/stock_redis_query.py distribution "用户名"    # 4. 查指定账户持仓分布
-python scripts/stock_redis_query.py detail "用户名" "策略名"    # 6. 查指定策略详情
-```
-
-2. 查询策略执行记录
-
-采用命令行方式，带特定参数
-
-```bash
-python scripts/stock_redis_query.py --username <用户名> --type strategy
-```
+#### 查询方式
 
 详细用法见：[docs/redis-info.md](docs/redis-info.md)
 
 **注意**：必须明确用户名，避免查错。
 
----
 
-### 总结流程图
+## 你支持如下量化交易策略
 
-```
-策略执行中？
-    ↓ 是
-使用上下文中的最新信息
-    ↓ 否
-从 Redis 查询（辅助）
-```
-
-**核心原则**：实时上下文 > Redis 缓存
-
-
-
-## vt_symbol产品代码表，与盈透conid，对照查询
-
-策略信息中的产品代码是 vnpy 专属格式的时候，如 265598.SMART ，对照此文档，获得股票名称，分类：
-
-参考
-[scripts/vt_symbol_info.json](scripts/vt_symbol_info.json)
-
-
-## 输出
-
-- 采用 json 格式返回结果，结构清晰
-- 具体字段必须符合策略中的具体要求
-- 要区分分析任务和下单前审核任务
-
-## 策略说明
-
-### 智能马丁格尔策略
+### 智能马丁格尔策略  (openclaw-martin) 
 
 - **核心逻辑**: 基于亏损加仓的资金管理策略
 - **风险控制**: 设置止损线和最大仓位上限
@@ -155,7 +105,7 @@ python scripts/stock_redis_query.py --username <用户名> --type strategy
 
 [docs/Martingale-Grid-Trading-Strategy.md](docs/Martingale-Grid-Trading-Strategy.md)
 
-### 智能短期趋势策略
+### 智能短期趋势策略  (openclaw-trend) 
 
 - **核心逻辑**: 结合技术指标判断短期走势
 - **买入信号**: 多头排列、成交量放大、突破关键位
@@ -165,8 +115,21 @@ python scripts/stock_redis_query.py --username <用户名> --type strategy
 
 [docs/Short-term-CCI-Trend-Strategy.md](docs/Short-term-CCI-Trend-Strategy.md)
 
+## 输出
 
+- 采用 json 格式返回结果，结构清晰
+- 具体字段必须符合策略中的具体要求
+- 要区分分析任务和下单前审核任务
+
+## 安装
+
+地址：
+https://github.com/tiger3927/skill-tiger-stock-strategy-analysis.git
+
+git克隆到到工作区目录下的skills目录下，克隆的目录改名，本技能目录必须为：tiger-stock-strategy-analysis
+
+tiger-stock-strategy-analysis目录下应该有本SKILL.md，docs目录，scripts目录
 
 ---
 
-*最后更新：2026-05-04*
+
