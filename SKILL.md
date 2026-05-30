@@ -111,15 +111,15 @@ description: "股票量化策略分析工具：为 vnpy 量化软件提供策略
 
 ## 你支持如下量化交易策略类型
 
-### 智能马丁格尔策略  (openclaw-martin)
+### 智能马丁格尔网格策略 (openclaw-martin)
 
-- **核心逻辑**: 基于亏损加仓的资金管理策略
-- **风险控制**: 设置止损线和最大仓位上限
-- **适用场景**: 震荡行情、反弹预期强的标的，或者指明此种策略的应用场景
+- **核心逻辑**: 基于支撑压力结构的马丁格尔资金管理——做多时在支撑区建仓、下跌分批加仓摊低成本；做空时在压力区建仓、上涨分批加空仓摊高成本。价格回归盈利线时整体获利退出
+- **风险控制**: 最大仓位上限 + 止损线（网格间距 × 网格数量 × 0.6）+ 关键位失效 + 基本面恶化 + 多指标背离预警
+- **适用场景**: 震荡行情、区间波动明确的标的，支持做多和做空双向
 
-具体见：
+具体见入口文档：
 
-[docs/Martingale-Grid-Trading-Strategy.md](docs/Martingale-Grid-Trading-Strategy.md)
+[docs/Martingale-Grid-Trading-Strategy/00-Router.md](docs/Martingale-Grid-Trading-Strategy/00-Router.md)
 
 ### 多信号权重评分趋势策略  （Multi\_Signal\_Treand）
 
