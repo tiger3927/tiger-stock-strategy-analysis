@@ -110,6 +110,6 @@
 | **金字塔进攻** | `martin_add_pyramid=True`，`enable_martin_add_loss=True` |
 | **AI 全托管** | `enable_openclaw_analysis=True`，`enable_openclaw_confirm_target_pos=True` |
 | **完全自主（不依赖 AI）** | `enable_openclaw_analysis=False`，子类内置信号逻辑 |
-| **变盘防御（趋势反转时）** | `loss_close_need_manual=False`，`enable_martin_add_loss=False`，`enable_martin_sub_loss=True` |
+| **变盘防御（趋势反转时）** | `loss_close_need_manual=False`，`enable_martin_add_loss=False`，`enable_martin_sub=True` |
 
 > 详参见 [`09_scenarios.md`](09_scenarios.md) 各场景完整配置。

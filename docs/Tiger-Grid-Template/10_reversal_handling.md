@@ -65,8 +65,8 @@
 
 ```
 if direction × pos < 0:      ← CCI方向与持仓方向相反
-    ├─ 减基础底仓：需 enable_martin_sub_profit=True 且 盈亏比 > martin_grid_profit
-    └─ 减网格仓：该网格仓盈利 > martin_grid_profit
+    ├─ 减基础底仓：需 enable_martin_sub_base=True 且 盈亏比 > martin_grid_profit
+    └─ 减网格仓：需 enable_martin_sub=True 且 该网格仓盈利 > martin_grid_profit
 ```
 
 ### CCI 减仓的盲区
@@ -75,7 +75,7 @@ if direction × pos < 0:      ← CCI方向与持仓方向相反
 |:--|:--|:--|
 | **CCI 滞后性** | CCI 需要跌穿 100 线才发出方向信号，此时价格可能已跌了不止3% | 减仓触发时亏损可能已超过止损线 |
 | **微利时无法减基础底仓** | 减基础底仓要求 `盈利 > martin_grid_profit`（默认3%） | 若开仓后微利1%~2%即反转，CCI方向已反但基础底仓不减 |
-| **亏损时网格仓也受限** | `enable_martin_sub_loss=False` 时，亏损状态下网格仓即使盈利也不减 | 仓位越跌越重，无法主动降低风险敞口 |
+| **网格减仓被全局关闭** | `enable_martin_sub=False` 时，所有网格减仓被禁止（无论盈亏） | 仓位无法通过 CCI 减仓主动降低，只能硬扛到止损 |
 | **loss_close_need_manual 阻断** | 所有平仓/减仓动作最终调用 `set_target_pos()`，亏损平仓被拦截 | 只能硬扛到止损触发 |
 
 ---
@@ -86,8 +86,8 @@ if direction × pos < 0:      ← CCI方向与持仓方向相反
 
 | 你的态度 | 关键设置 | 效果 |
 |:--|:--|:--|
-| **宁可少赚也要保本** | `loss_close_need_manual=False` + `enable_martin_sub_loss=True` | CCI反转时果断减仓，不犹豫 |
-| **网格定投、相信反转会回来** | `enable_martin_sub_loss=False` + `loss_close_need_manual=True` | CCI反转不卖，亏损也不人工确认（被动等待止损或反弹） |
+| **宁可少赚也要保本** | `loss_close_need_manual=False` + `enable_martin_sub=True` | CCI反转时果断减仓，不犹豫 |
+| **网格定投、相信反转会回来** | `enable_martin_sub=False` + `loss_close_need_manual=True` | CCI反转不卖，亏损也不人工确认（被动等待止损或反弹） |
 | **让止损决定一切** | 仅 `enable_stop_loss=True`，其他子类信号处理 | 简单粗暴，适合信号很准的策略 |
 
 ### 核心场景 1：趋势追踪变盘（做多 → 趋势转空，立即平仓）
@@ -111,8 +111,8 @@ if direction × pos < 0:      ← CCI方向与持仓方向相反
     "enable_stop_autoprofit": false,
     "enable_martin_add_loss": false,
     "enable_martin_add_profit": false,
-    "enable_martin_sub_profit": true,
-    "enable_martin_sub_loss": true,
+    "enable_martin_sub_base": true,
+    "enable_martin_sub": true,
     "martin_grid_profit": 0.01,
     "martin_sub_part": 1.0,
     "enable_martin_add_open": false,
@@ -127,7 +127,7 @@ if direction × pos < 0:      ← CCI方向与持仓方向相反
 - `loss_close_need_manual=False`：不拦平仓（**最重要**，趋势反转时不犹豫）
 - `martin_sub_part=1.0`：CCI确认反向后一次全部减仓（不保留底仓）
 - `martin_grid_profit=0.01`：降低基础底仓减仓门槛，微利也减
-- `enable_martin_sub_loss=True`：亏损时允许减网格仓（防止越陷越深）
+- `enable_martin_sub=True`：允许减网格仓（防止越陷越深）
 - `enable_martin_add_loss=False`：趋势已转，不再抄底
 - `stop_loss_radio=0.03`：作为兜底，万一 CCI 没触发也有最后防线
 
@@ -151,8 +151,8 @@ if direction × pos < 0:      ← CCI方向与持仓方向相反
     "enable_stop_autoprofit": false,
     "enable_martin_add_loss": false,
     "enable_martin_add_profit": false,
-    "enable_martin_sub_profit": true,
-    "enable_martin_sub_loss": true,
+    "enable_martin_sub_base": true,
+    "enable_martin_sub": true,
     "martin_grid_profit": 0.00,
     "martin_sub_part": 1.0,
     "enable_martin_add_open": false,
@@ -167,7 +167,7 @@ if direction × pos < 0:      ← CCI方向与持仓方向相反
 - `enable_martin_add_loss=False`：**核心**——停止亏损加仓，不再摊平
 - `martin_grid_profit=0.00`：网格仓无条件减仓（不等盈利，不抱幻想）
 - `martin_sub_part=1.0`：一次全部减仓
-- `enable_martin_sub_loss=True`：允许亏损时减仓
+- `enable_martin_sub=True`：允许减网格仓
 - `stop_loss_radio=0.05`：放宽止损线（因为已持有网格仓位，成本较高），作为保底
 
 ### 核心场景 3：怀疑反转但不确定（减仓观望，不全平）
@@ -190,8 +190,8 @@ if direction × pos < 0:      ← CCI方向与持仓方向相反
     "stop_autoprofit_back_maxvalue": 0.01,
     "enable_martin_add_loss": false,
     "enable_martin_add_profit": false,
-    "enable_martin_sub_profit": true,
-    "enable_martin_sub_loss": false,
+    "enable_martin_sub_base": true,
+    "enable_martin_sub": false,
     "martin_grid_profit": 0.02,
     "martin_sub_part": 0.33,
     "first_part": 0.2,
@@ -204,7 +204,7 @@ if direction × pos < 0:      ← CCI方向与持仓方向相反
 
 - `target_pos=20`：主动降低到20%仓位（原有的100股减到20股）
 - `max_position_ratio=0.2`：限制未来加仓上限
-- `enable_martin_sub_loss=False`：网格仓不急于减（还给盈利空间）
+- `enable_martin_sub=False`：网格仓不急于减（还给盈利空间）
 - `stop_autoprofit_start_radio=0.03` + `back_maxvalue=0.01`：极敏感的移动止盈，回撤1%就跑
 - `enable_martin_add_loss=False`：禁止继续摊平
 
@@ -271,8 +271,8 @@ def on_bar(self, bar: BarData):
         self.enable_stop_loss = True
         self.stop_loss_radio = 0.03
         self.loss_close_need_manual = False  # 关键：允许平仓
-        self.enable_martin_sub_profit = True
-        self.enable_martin_sub_loss = True
+        self.enable_martin_sub_base = True
+        self.enable_martin_sub = True
         self.set_target_pos(0, comment="子类检测方向背离，平仓")
 
 def _detect_reversal(self):
@@ -300,8 +300,8 @@ def _detect_reversal(self):
 | `stop_loss_radio` | `0.03` ~ `0.05` | 网格仓位多则放宽 |
 | `enable_martin_add_loss` | `False` | 停止抄底 |
 | `enable_martin_add_profit` | `False` | 停止追高 |
-| `enable_martin_sub_profit` | `True` | CCI反向时减基础底仓 |
-| `enable_martin_sub_loss` | `True` | CCI反向时减网格仓 |
+| `enable_martin_sub_base` | `True` | CCI反向时减基础底仓 |
+| `enable_martin_sub` | `True` | CCI反向时减网格仓 |
 | `martin_grid_profit` | `0.00` ~ `0.01` | 降低减仓盈利门槛 |
 | `martin_sub_part` | `0.33` ~ `1.0` | 减仓比例（1.0=全部） |
 | `max_position_ratio` | 当前占比或更低 | 限制后续重新加仓 |

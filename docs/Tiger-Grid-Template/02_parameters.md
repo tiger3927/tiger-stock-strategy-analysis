@@ -66,8 +66,8 @@
 | `martin_add_pyramid_radio` | — | float | 0.1 | 金字塔增减加仓比例基数 |
 | `martin_grid_distance` | `马丁格尔网格间距` | float | 0.03 | 亏损加仓的最小价格距离（3%） |
 | `martin_add_count` | `马丁格尔网格数` | int | 10 | 可加仓次数（决定每格交易量） |
-| `enable_martin_sub_profit` | — | bool | True | 允许减基础底仓（盈利时） |
-| `enable_martin_sub_loss` | `持仓亏损时允许马丁格尔减盈利的网格仓` | bool | True | 允许亏损时减仓（加仓部分盈利时） |
+| `enable_martin_sub_base` | — | bool | True | 允许减基础底仓（仅盈利时有效） |
+| `enable_martin_sub` | `允许减盈利网格仓` | bool | True | 允许减盈利网格仓（统一开关，不区分盈亏状态） |
 | `martin_grid_profit` | `马丁格尔网格止盈幅度` | float | 0.03 | 网格减仓必须的最小盈利（3%） |
 | `martin_sub_part` | — | float | 0.33 | 盈利仓位的减仓比例（33%） |
 
@@ -135,7 +135,7 @@
 | **止盈** | `enable_stop_profit`, `stop_profit_radio`, `enable_stop_autoprofit`, `enable_atr_stop_profit` | [`05_stop_profit_loss.md`](05_stop_profit_loss.md) |
 | **止损** | `enable_stop_loss`, `stop_loss_radio`, `enable_atr_stop_loss` | [`05_stop_profit_loss.md`](05_stop_profit_loss.md) |
 | **网格加仓** | `enable_martin_add_loss`, `martin_grid_distance`, `martin_add_count` | [`06_grid_martin.md`](06_grid_martin.md) |
-| **网格减仓** | `enable_martin_sub_loss`, `martin_grid_profit`, `martin_sub_part` | [`06_grid_martin.md`](06_grid_martin.md) |
+| **网格减仓** | `enable_martin_sub`, `martin_grid_profit`, `martin_sub_part` | [`06_grid_martin.md`](06_grid_martin.md) |
 | **价格保护** | `enable_first_allow_prices`, `enable_allow_price_high` | [`07_trade_control.md`](07_trade_control.md) |
 | **金字塔模式** | `martin_add_pyramid`, `martin_add_pyramid_radio` | [`06_grid_martin.md`](06_grid_martin.md) |
 | **AI 分析** | `enable_openclaw_analysis`, `openclaw_main_interval` | [`04_ai_interface.md`](04_ai_interface.md) |

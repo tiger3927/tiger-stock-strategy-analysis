@@ -27,13 +27,14 @@ if self.target_pos == self.pos:
 
 ```
 ├─ 尝试减基础底仓
-│   条件：enable_martin_sub_profit=True 且 盈亏比 > martin_grid_profit
+│   条件：enable_martin_sub_base=True 且 盈亏比 > martin_grid_profit
 │   量：get_open_pos_sub_volume() = 资金 × first_part × martin_sub_part
 │
-└─ 如果基础底仓不能减，尝试减网格仓
-    条件：有 poschange（网格成交记录）
+└─ 尝试减网格仓
+    条件：enable_martin_sub=True
+          且 有 poschange（网格成交记录）
           且 该网格仓的盈利 > martin_grid_profit
-          且（若当前亏损，需要 enable_martin_sub_loss=True 才允许减）
+          （不再区分盈亏状态，由 enable_martin_sub 统一控制）
     量：累加所有达标的网格仓量
 ```
 
@@ -41,8 +42,8 @@ if self.target_pos == self.pos:
 
 | 参数 | 控制什么 |
 |:--|:--|
-| `enable_martin_sub_profit` | 盈利时能否卖基础底仓 |
-| `enable_martin_sub_loss` | 亏损时能否减网格仓（减盈利的网格仓来降低仓位） |
+| `enable_martin_sub_base` | 盈利时能否卖基础底仓 |
+| `enable_martin_sub` | 允许减盈利网格仓（统一开关，不区分盈亏状态） |
 | `martin_sub_part` | 每次减仓比例（0.33 = 每次减 1/3 基础仓） |
 | `martin_grid_profit` | 网格仓需盈利多少才允许减（0.03 = 3%） |
 

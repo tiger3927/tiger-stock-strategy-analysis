@@ -29,8 +29,9 @@
     "max_position_ratio": 1.0,
     "enable_martin_add_loss": false,
     "enable_martin_add_profit": false,
-    "enable_martin_sub_profit": false,
-    "enable_martin_sub_loss": false
+    "enable_martin_sub_base": false,
+    "enable_martin_sub": false,
+    "enable_martin_add_open": false
   }
 }
 ```
@@ -64,8 +65,8 @@
     "enable_stop_autoprofit": false,
     "enable_martin_add_loss": true,
     "enable_martin_add_profit": false,
-    "enable_martin_sub_profit": true,
-    "enable_martin_sub_loss": true,
+    "enable_martin_sub_base": true,
+    "enable_martin_sub": true,
     "martin_grid_distance": 0.025,
     "martin_add_count": 6,
     "martin_grid_profit": 0.02,
@@ -109,8 +110,8 @@
     "enable_stop_autoprofit": false,
     "enable_martin_add_loss": false,
     "enable_martin_add_profit": false,
-    "enable_martin_sub_profit": false,
-    "enable_martin_sub_loss": false,
+    "enable_martin_sub_base": false,
+    "enable_martin_sub": false,
     "enable_martin_add_open": false
   }
 }
@@ -147,8 +148,8 @@
     "martin_add_count": 8,
     "martin_add_pyramid": true,
     "martin_add_pyramid_radio": 0.12,
-    "enable_martin_sub_profit": false,
-    "enable_martin_sub_loss": false,
+    "enable_martin_sub_base": false,
+    "enable_martin_sub": false,
     "first_part": 0.2,
     "max_position_ratio": 1.0
   }
@@ -187,8 +188,8 @@
     "stop_autoprofit_back_maxvalue": 0.015,
     "enable_martin_add_loss": false,
     "enable_martin_add_profit": false,
-    "enable_martin_sub_profit": false,
-    "enable_martin_sub_loss": false,
+    "enable_martin_sub_base": false,
+    "enable_martin_sub": false,
     "first_part": 0.2,
     "max_position_ratio": 1.0
   }
@@ -227,8 +228,8 @@
     "stop_autoprofit_back_maxvalue": 0.02,
     "enable_martin_add_loss": false,
     "enable_martin_add_profit": false,
-    "enable_martin_sub_profit": false,
-    "enable_martin_sub_loss": false,
+    "enable_martin_sub_base": false,
+    "enable_martin_sub": false,
     "first_part": 1.0,
     "max_position_ratio": 1.0
   }

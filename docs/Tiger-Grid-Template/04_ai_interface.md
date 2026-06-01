@@ -48,8 +48,8 @@ def on_openclaw_analysis_result(self, result: dict):
 enable_martin_add_open      = False
 enable_martin_add_profit    = False
 enable_martin_add_loss      = False
-enable_martin_sub_profit    = False
-enable_martin_sub_loss      = False
+enable_martin_sub_base        = False
+enable_martin_sub             = False
 enable_stop_profit          = False
 enable_stop_loss            = False
 enable_atr_stop_loss        = False
@@ -113,8 +113,8 @@ target_allow_price          = 0
     "max_position_ratio": 1.0,
     "enable_martin_add_loss": false,
     "enable_martin_add_profit": false,
-    "enable_martin_sub_profit": false,
-    "enable_martin_sub_loss": false
+    "enable_martin_sub_base": false,
+    "enable_martin_sub": false
   }
 }
 ```
@@ -136,7 +136,7 @@ target_allow_price          = 0
 |:--|:--|
 | 止盈止损开关 | `enable_stop_profit`, `enable_stop_loss`, `enable_atr_stop_loss`, `enable_atr_stop_profit`, `enable_stop_autoprofit` |
 | 止盈止损数值 | `stop_profit_radio`, `stop_loss_radio`, `atr_loss_multiple`, `stop_autoprofit_start_radio`, `stop_autoprofit_back_maxvalue` |
-| 网格开关 | `enable_martin_add_open`, `enable_martin_add_loss`, `enable_martin_add_profit`, `enable_martin_sub_profit`, `enable_martin_sub_loss` |
+| 网格开关 | `enable_martin_add_open`, `enable_martin_add_loss`, `enable_martin_add_profit`, `enable_martin_sub_base`, `enable_martin_sub` |
 | 网格数值 | `martin_grid_distance`, `martin_add_count`, `martin_grid_profit`, `martin_sub_part` |
 | 仓位数值 | `first_part`, `max_position_ratio` |
 | 价格保护 | `enable_first_allow_prices`, `first_allow_price_min`, `first_allow_price_max`, `enable_allow_price_high`, `allow_price_high` |

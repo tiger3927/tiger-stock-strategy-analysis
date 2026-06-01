@@ -62,7 +62,7 @@ do_set_target_pos()
 | 场景 | 开关设置 | 数值设置 | 预期行为 |
 |:--|:--|:--|:--|
 | **纯网格防守** | 所有 `enable_martin_*` = False | — | 持仓不变，仅止盈止损 |
-| **亏损加仓 + 减盈利网格** | `enable_martin_add_loss=True`, `enable_martin_sub_loss=True` | `grid_distance=0.03`, `grid_profit=0.03` | 每跌 3% 加一档，每涨 3% 减一档 |
+| **亏损加仓 + 减盈利网格** | `enable_martin_add_loss=True`, `enable_martin_sub=True` | `grid_distance=0.03`, `grid_profit=0.03` | 每跌 3% 加一档，每涨 3% 减一档 |
 | **进攻型（跌加涨也加）** | `enable_martin_add_loss=True`, `enable_martin_add_profit=True` | — | 双向加仓，仓位持续扩大 |
 | **保守型（只止盈止损）** | 所有 `enable_martin_*` = False, `enable_stop_*` = True | `profit_radio=0.06`, `loss_radio=0.02` | 赚 6% 止盈，亏 2% 止损 |
 | **移动止盈保护利润** | `enable_stop_autoprofit=True` | `start_radio=0.05`, `back_maxvalue=0.02` | 赚 5% 后开始保护，回撤 2% 即走 |
