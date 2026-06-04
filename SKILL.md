@@ -15,6 +15,9 @@ description: "股票量化策略分析工具：为 vnpy 量化软件提供策略
 
 推荐的美股，盈透conid和品种参考
 [scripts/vt\_symbol\_info.json](scripts/vt_symbol_info.json)
+如果上述文档中不包含，可以通过如下方式查询美股的盈透的conid：
+[docs/vnpy-command-tool.md](docs/vnpy-command-tool.md)
+
 
 ## 信息获取方法（缓存优先 + 增量更新）
 
@@ -92,21 +95,22 @@ description: "股票量化策略分析工具：为 vnpy 量化软件提供策略
 
 **注意**：必须明确用户名，避免查错。
 
-### 通过RedisProxy 向量化程序发送命令
+### 通过 Redis Proxy 向量化程序发送命令
 
-如需要向量化程序发送操作指令（开平仓、调仓等），可通过命令发送工具实现。
+如需要向量化程序发送操作指令（开平仓、调仓、查 ConID 等），可通过统一命令工具实现。
 
-详细用法见：[docs/stock-command-tool.md](docs/stock-command-tool.md)
+详细用法见：[docs/vnpy-command-tool.md](docs/vnpy-command-tool.md)
 
 **注意**：必须明确用户名和策略名，避免发错。
 
 #### 支持的命令类型
 
-| 命令               | 说明      |
-| ---------------- | ------- |
-| `close`          | 全部平仓    |
-| `set_target_pos` | 调整目标持仓量 |
-| `notice`         | 发送通知消息  |
+| 命令               | 说明           |
+| ----------------- | -------------- |
+| `conid`           | 查询股票 IB ConID | 
+| `close`           | 全部平仓         |
+| `set_target_pos`  | 调整目标持仓量     |
+| `notice`          | 发送通知消息      |
 
 ## 你支持如下量化交易策略类型
 

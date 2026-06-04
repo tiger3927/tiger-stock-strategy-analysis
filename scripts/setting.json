@@ -1,5 +1,4 @@
 {
-    "userid": "楠总1号",
     "http_redis_proxy_url": "https://ai4.newgoai.com/",
     "http_redis_proxy_db": 11,
     "http_redis_proxy_apikey":"nokey"
