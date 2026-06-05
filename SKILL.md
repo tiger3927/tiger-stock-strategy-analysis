@@ -1,6 +1,6 @@
 ---
 name: "tiger-stock-strategy-analysis"
-description: "股票量化策略分析工具：为 vnpy 量化软件提供策略分析和下单前审核。支持智能马丁格尔策略(openclaw-martin)、多信号权重评分趋势策略（Multi\_Signal\_Treand）、智能短期趋势策略(openclaw-trend)；可查询用户 redis 上的vnpy的量化交易账户信息、策略执行信息，并可向量化程序发送操作指令（开平仓、调仓等）。无需 API key。"
+description: "股票量化策略分析工具：为 vnpy 量化软件提供策略分析和下单前审核。支持智能马丁格尔策略(openclaw-martin)、多信号权重评分趋势策略（Multi\_Signal\_Treand）、智能短期趋势策略(openclaw-trend)；可查询用户 redis 上的vnpy的量化交易账户信息、策略执行信息，并可向量化程序发送操作和查询指令（开平仓、调仓、行情查询等、查询盈透IBKR的conid）。无需 API key。"
 ---
 
 # tiger-stock-strategy-analysis
@@ -13,7 +13,7 @@ description: "股票量化策略分析工具：为 vnpy 量化软件提供策略
 
 策略信息中的产品代码是 vnpy 专属格式的时候，如 265598.SMART ，对照此文档，获得股票名称，分类：
 
-推荐的美股，盈透conid和品种参考
+推荐的美股的盈透conid参考：
 [scripts/vt\_symbol\_info.json](scripts/vt_symbol_info.json)
 如果上述文档中不包含，可以通过如下方式查询美股的盈透的conid：
 [docs/vnpy-command-tool.md](docs/vnpy-command-tool.md)
@@ -85,23 +85,21 @@ description: "股票量化策略分析工具：为 vnpy 量化软件提供策略
 
 ### 用外部技能联网查询分析的信息
 
-### Redis API 查询
+### Redis API 查询账户和策略持仓信息
 
 如需要了解量化交易系统的持仓全貌，你可以从 redis api 查询整个量化交易系统的最新信息。
 
-#### 查询方式
-
-详细用法见：[docs/redis-info.md](docs/redis-info.md)
+查询方式，详细用法见：[docs/redis-info.md](docs/redis-info.md)
 
 **注意**：必须明确用户名，避免查错。
 
-### 通过 Redis Proxy 向量化程序发送命令
+### vnpy-command-tool，量化程序命令工具
 
-如需要向量化程序发送操作指令（开平仓、调仓、查 ConID 等），可通过统一命令工具实现。
+如需要向量化程序发送操作指令（开平仓、调仓、查询行情和策略参数，设置策略参数，查美股在盈透的 ConID 等），可使用统一命令工具vnpy-command-tool，前提是量化系统必须正在运行。
 
 详细用法见：[docs/vnpy-command-tool.md](docs/vnpy-command-tool.md)
 
-**注意**：必须明确用户名和策略名，避免发错。
+**注意**：该工具必须明确用户名和策略名，以及用户名，避免发错。
 
 #### 支持的命令类型
 
