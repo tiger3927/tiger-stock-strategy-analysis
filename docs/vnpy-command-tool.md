@@ -21,6 +21,7 @@
 | 全平策略 | `close` | `<用户名> <策略名> [--comment]` | 默认 comment="紧急平仓" |
 | 发通知 | `notice` | `<用户名> <策略名> [--comment]` |  |
 | 调目标仓位 | `set-target-pos` | `<用户名> <策略名> --pos POS [--comment]` | pos: 正数=多，负数=空，0=空仓 |
+| 查策略状态 | `query-strategy-status` | `<用户名> <策略名>` | 建议带 `--wait` |
 | 原始命令 | `send` | `<用户名> <策略名> '<JSON>'` | JSON 必须含 `cmd` 字段 |
 
 所有子命令都支持以下参数：
@@ -103,6 +104,19 @@ JSON 必须含 `cmd` 字段，工具自动包装 `type` + `target_strategy`。
 示例：
 ```bash
 python scripts/vnpy_command.py --token tiger-code-123456 send tiger-code MARTIN-AMD '{"cmd":"close","comment":"平仓"}'
+```
+
+### query-strategy-status — 查策略状态
+
+```bash
+python scripts/vnpy_command.py [--token TOKEN] [--wait [N]] query-strategy-status <用户名> <策略名>
+```
+
+查询策略的完整状态信息，包括持仓、盈亏、参数设置、网格数据等。**建议带 `--wait`** 以便看到结果。
+
+示例：
+```bash
+python scripts/vnpy_command.py --token tiger-code-123456 query-strategy-status tiger-code MARTIN-AMD --wait
 ```
 
 ---

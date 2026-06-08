@@ -178,11 +178,26 @@ def format_command_result(data: dict) -> str:
         return "查询超时或无结果"
 
     if data.get("success"):
-        return (
-            f"✅ 命令执行成功\n"
-            f"  消息: {data.get('message', '')}\n"
-            f"  时间: {data.get('timestamp', '')}"
-        )
+        lines = [
+            f"✅ 命令执行成功",
+            f"  消息: {data.get('message', '')}",
+        ]
+        # 如果有 data 字段（如 query_strategy_status），展开显示
+        result_data = data.get("data")
+        if result_data and isinstance(result_data, dict):
+            lines.append(f"  {'=' * 50}")
+            for key, value in result_data.items():
+                if isinstance(value, dict):
+                    lines.append(f"  {key}:")
+                    for k, v in value.items():
+                        lines.append(f"    {k}: {v}")
+                elif isinstance(value, list):
+                    lines.append(f"  {key}: {json.dumps(value, ensure_ascii=False, indent=2)}")
+                else:
+                    lines.append(f"  {key}: {value}")
+            lines.append(f"  {'=' * 50}")
+        lines.append(f"  时间: {data.get('timestamp', '')}")
+        return "\n".join(lines)
     else:
         return (
             f"❌ 命令执行失败\n"
@@ -249,6 +264,13 @@ def main():
     setpos_parser.add_argument('--comment', default=None, help='备注')
     setpos_parser.add_argument('--wait', nargs='?', const=30, type=int, default=0,
                                help='等待结果，可选指定超时秒数（默认 30）')
+
+    # --- query-strategy-status ---
+    qss_parser = subparsers.add_parser('query-strategy-status', help='查询策略完整状态信息')
+    qss_parser.add_argument('username', help='用户名')
+    qss_parser.add_argument('strategy', help='策略名称')
+    qss_parser.add_argument('--wait', nargs='?', const=30, type=int, default=0,
+                            help='等待结果，可选指定超时秒数（默认 30）')
 
     # --- send ---
     send_parser = subparsers.add_parser('send', help='发送任意原始命令 JSON')
@@ -344,6 +366,16 @@ def main():
             }
             if args.comment:
                 command["comment"] = args.comment
+            if response_key:
+                command["response_key"] = response_key
+            client.send_command(username, inject_token(command, token))
+
+        elif args.command == 'query-strategy-status':
+            command = {
+                "type": "strategy_cmd",
+                "target_strategy": strategy,
+                "cmd": "query_strategy_status",
+            }
             if response_key:
                 command["response_key"] = response_key
             client.send_command(username, inject_token(command, token))
