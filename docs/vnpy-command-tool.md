@@ -22,6 +22,8 @@
 | 发通知 | `notice` | `<用户名> <策略名> [--comment]` |  |
 | 调目标仓位 | `set-target-pos` | `<用户名> <策略名> --pos POS [--comment]` | pos: 正数=多，负数=空，0=空仓 |
 | 查策略状态 | `query-strategy-status` | `<用户名> <策略名>` | 建议带 `--wait` |
+| 发布信息 | `publish` | `<用户名> <key路径> <值> [--expire N]` | 直接写入 Redis key，无需 wait |
+| 读取信息 | `get` | `<用户名> <key路径>` | 读取 Redis key 的值 |
 | 原始命令 | `send` | `<用户名> <策略名> '<JSON>'` | JSON 必须含 `cmd` 字段 |
 
 所有子命令都支持以下参数：
@@ -117,6 +119,41 @@ python scripts/vnpy_command.py [--token TOKEN] [--wait [N]] query-strategy-statu
 示例：
 ```bash
 python scripts/vnpy_command.py --token tiger-code-123456 query-strategy-status tiger-code MARTIN-AMD --wait
+```
+
+### publish — 发布信息
+
+```bash
+python scripts/vnpy_command.py [--token TOKEN] publish <用户名> <key路径> <值> [--expire N]
+```
+
+向 Redis 写入一个 key-value（SET 操作），完整 key 为 `vnpy:{username}:{key_path}`。
+
+- `key_path`：key 路径后缀，如 `analysis:result`、`notice:all`
+- `value`：要写入的值，纯文本或 JSON 字符串
+- `--expire N`：可选，过期时间（秒），不设置则永不过期
+
+示例：
+```bash
+# 发布分析结果 JSON
+python scripts/vnpy_command.py --token tiger-code-123456 publish tiger-code analysis:result '{"status":"ok"}' --expire 3600
+
+# 发布通知
+python scripts/vnpy_command.py --token tiger-code-123456 publish tiger-code notice:all "系统维护通知"
+```
+
+### get — 读取信息
+
+```bash
+python scripts/vnpy_command.py [--token TOKEN] get <用户名> <key路径>
+```
+
+读取 Redis 中指定 key 的值（GET 操作），完整 key 为 `vnpy:{username}:{key_path}`。
+
+示例：
+```bash
+# 读取之前发布的分析结果
+python scripts/vnpy_command.py --token tiger-code-123456 get tiger-code analysis:result
 ```
 
 ---

@@ -14,6 +14,8 @@ VeighNa 统一命令发送工具
     notice        发送通知消息
     set-target-pos  调整策略目标仓位
     send          发送任意原始命令
+    publish       向 Redis 写入/发布信息（SET）
+    get           读取 Redis key 的值（GET）
 
 用法:
     python vnpy_command.py [全局参数] <子命令> [子命令参数]
@@ -34,6 +36,9 @@ VeighNa 统一命令发送工具
     python vnpy_command.py --token tiger-code-123456 notice tiger-code MARTIN-AMD --comment "注意风控"
     python vnpy_command.py --token tiger-code-123456 set-target-pos tiger-code MARTIN-AMD --pos -2.0
     python vnpy_command.py --token tiger-code-123456 send tiger-code MARTIN-AMD '{"cmd":"close","comment":"平仓"}'
+    # 发布信息
+    python vnpy_command.py --token tiger-code-123456 publish tiger-code analysis:result '{"status":"ok"}' --expire 3600
+    python vnpy_command.py --token tiger-code-123456 publish tiger-code notice:all "系统维护通知"
 """
 import sys
 import os
@@ -110,6 +115,13 @@ class VnpyCommandClient:
         if result and result.get('success'):
             return result.get('data')
         return None
+
+    def set_value(self, key: str, value: str, expire_seconds: int = None) -> dict:
+        """设置 Redis key 的值（SET），可选过期时间"""
+        data = {"key": key, "value": value}
+        if expire_seconds is not None:
+            data["expire_seconds"] = expire_seconds
+        return self._make_request("api/v1/redis/set", data=data)
 
     def poll_result(self, response_key: str, timeout: int = 30, interval: int = 1) -> dict:
         """轮询等待结果"""
@@ -223,6 +235,9 @@ def main():
   python vnpy_command.py --token tiger-code-123456 notice tiger-code MARTIN-AMD --comment "注意风控"
   python vnpy_command.py --token tiger-code-123456 set-target-pos tiger-code MARTIN-AMD --pos -2.0
   python vnpy_command.py --token tiger-code-123456 send tiger-code MARTIN-AMD '{"cmd":"close"}'
+  # 发布信息
+  python vnpy_command.py --token tiger-code-123456 publish tiger-code analysis:result '{"status":"ok"}' --expire 3600
+  python vnpy_command.py --token tiger-code-123456 publish tiger-code notice:all "系统维护通知"
         '''
     )
 
@@ -280,6 +295,19 @@ def main():
     send_parser.add_argument('--wait', nargs='?', const=30, type=int, default=0,
                              help='等待结果，可选指定超时秒数（默认 30）')
 
+    # --- publish ---
+    publish_parser = subparsers.add_parser('publish', help='向 Redis 写入/发布信息（SET）')
+    publish_parser.add_argument('username', help='用户名')
+    publish_parser.add_argument('key_path', help='key 路径后缀，完整 key 为 vnpy:{username}:{key_path}')
+    publish_parser.add_argument('value', help='要写入的值（纯文本或 JSON 字符串）')
+    publish_parser.add_argument('--expire', type=int, default=None,
+                                help='过期时间（秒），不设置则永不过期')
+
+    # --- get ---
+    get_parser = subparsers.add_parser('get', help='读取 Redis key 的值（GET）')
+    get_parser.add_argument('username', help='用户名')
+    get_parser.add_argument('key_path', help='key 路径后缀，完整 key 为 vnpy:{username}:{key_path}')
+
     args = parser.parse_args()
 
     if not args.command:
@@ -320,6 +348,29 @@ def main():
             print(format_conid_result(result))
         else:
             print(f"\n命令已发送，结果将写入: {response_key}")
+
+    elif args.command == 'publish':
+        key = f"vnpy:{username}:{args.key_path}"
+        print(f"发布信息:")
+        print(f"  Key:   {key}")
+        print(f"  Value: {args.value}")
+        if args.expire:
+            print(f"  过期:  {args.expire} 秒")
+        result = client.set_value(key, args.value, expire_seconds=args.expire)
+        if result and result.get('success'):
+            print(f"  结果: ✅ 发布成功")
+        else:
+            print(f"  结果: ❌ 发布失败")
+
+    elif args.command == 'get':
+        key = f"vnpy:{username}:{args.key_path}"
+        print(f"读取 Key: {key}")
+        value = client.get_value(key)
+        if value is not None:
+            print(f"  结果: ✅ 读取成功")
+            print(f"  值:   {value}")
+        else:
+            print(f"  结果: ❌ Key 不存在或读取失败")
 
     else:
         # --- 策略命令（close / notice / set-target-pos / send）---
