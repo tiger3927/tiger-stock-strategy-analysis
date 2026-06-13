@@ -8,24 +8,84 @@
 
 ---
 
-## 缓存策略
+## 执行流程（AI 必须严格按此顺序执行）
 
-为避免重复分析浪费资源，采用 Redis 缓存机制：
+### 第 1 步：查询缓存
 
-1. **查询已有结果**：先读取 Redis key `vnpy:{市场名}:大盘与板块和资金流向分析`
-2. **判断时效**：如果结果在 **6 小时内**，直接返回缓存内容，不再重新分析
-3. **重新分析**：如果结果超过 6 小时或不存在，执行新的分析
-4. **保存结果**：分析完成后，通过 `publish` 命令将结果写入 Redis，key 规则为 `vnpy:{市场名}:大盘与板块和资金流向分析`，并设置过期时间
+```bash
+python scripts/vnpy_command.py --token TOKEN get 用户名 /vnpy:{市场名}:大盘与板块和资金流向分析
+```
 
-> 查询和发布结果到 Redis 使用 `vnpy_command.py` 的 `get` 和 `publish` 子命令，详见 [vnpy-command-tool.md](../vnpy-command-tool.md)。
+- 市场名取值：`美股` / `加密货币` / `中国期货` / `中国A股` / `港股`
+- key 以 `/` 开头表示公共数据，不归属任何用户
+
+### 第 2 步：判断时效
+
+- 如果缓存存在 **且** 距今 **≤ 6 小时** → **直接完整返回缓存 JSON 的原始数据，本模块执行结束。禁止重新分析。**
+- 如果缓存不存在 **或** 距今 **> 6 小时** → 继续第 3 步
+
+### 第 3 步：获取市场数据
+
+使用 `get_market_data.py` 获取结构化价格数据：
+
+```bash
+# 美股示例
+python scripts/get_market_data.py --market us_stocks --batch us-major-indices --output json
+python scripts/get_market_data.py --market us_stocks --batch us-sectors --output json
+python scripts/get_market_data.py --market us_stocks --batch us-macro --output json
+
+# 加密货币示例
+python scripts/get_market_data.py --market crypto --batch crypto-majors --output json
+python scripts/get_market_data.py --market crypto --batch crypto-alt-l1 --output json
+```
+
+> 可用 `--list-batches` 查看当前市场所有预设批次。
+>
+> **ICI 资金流数据**（美股专用）：
+> ```bash
+> # 股基+ETF 综合净流入（周度）
+> python scripts/get_market_data.py --fetch-url ici-equity-flows --output json
+>
+> # 货币基金 AUM（周度）
+> python scripts/get_market_data.py --fetch-url ici-mmf-assets --output json
+> ```
+
+### 第 4 步：执行分析
+
+加载对应市场的分析文档（见下方「市场子模块」表格），按文档中的执行流程逐步分析。
+
+> **⚠️ 输出格式铁律**：分析过程在内部完成，**不得向用户输出分析过程的中间文本**。最终只输出【六、输出模板】规定的 JSON 结果。如果分析文档的 Step 中有「结论输出」要求，那是要求填入 JSON 字段，不是输出给用户看。
+
+### 第 5 步：保存结果
+
+分析完成后，将 JSON 结果写入 Redis 缓存：
+
+```bash
+python scripts/vnpy_command.py --token TOKEN publish 用户名 /vnpy:{市场名}:大盘与板块和资金流向分析 '{json结果}' --expire 21600
+```
+
+- `--expire 21600` = 6 小时过期，与缓存时效一致
+
+### 第 6 步：返回结果
+
+将分析获得的 JSON 结果返回给用户，jSON格式完整采用 市场子模块 中的文档中规定的 JSON 结果的格式。
+
+---
+
+## 数据获取工具
+
+| 工具 | 用途 | 文档 |
+|------|------|------|
+| `get_market_data.py` | 获取结构化价格数据（含均线、52周百分位） | 见上方示例 |
+| `vnpy_command.py` | 读写 Redis 缓存（get / publish） | [vnpy-command-tool.md](../vnpy-command-tool.md) |
 
 ---
 
 ## 市场子模块
 
-| 市场类型 | 分析文档 | 说明 |
-|---------|---------|------|
-| 美股 | [美股市场](美股市场.md) | 适用于 IB gateway 连接的美股交易 |
-| 加密货币 | [加密货币市场](加密货币市场.md) | 适用于 Binance 等数字币交易 |
+| 市场名 | 分析文档 | 数据批次 | 说明 |
+|---------|---------|---------|------|
+| 美股 | [美股](美股市场.md) | us-major-indices, us-macro, us-sectors, us-style | 适用于 IB gateway 连接的美股交易 |
+| 加密货币 | [加密货币](加密货币市场.md) | crypto-majors, crypto-alt-l1, crypto-defi, crypto-meme, crypto-infra | 适用于 Binance 等数字币交易 |
 
 > 其他市场（中国期货、中国A股等）待补充。

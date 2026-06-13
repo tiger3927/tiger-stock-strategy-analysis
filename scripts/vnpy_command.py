@@ -315,8 +315,8 @@ def main():
         return
 
     token = args.token
-    wait = args.wait
-    response_key = args.response_key
+    wait = getattr(args, 'wait', None)
+    response_key = getattr(args, 'response_key', None)
     client = VnpyCommandClient()
 
     # 统一提取 username（所有子命令的第一个位置参数）
@@ -350,7 +350,10 @@ def main():
             print(f"\n命令已发送，结果将写入: {response_key}")
 
     elif args.command == 'publish':
-        key = f"vnpy:{username}:{args.key_path}"
+        if args.key_path.startswith('/'):
+            key = args.key_path[1:]
+        else:
+            key = f"vnpy:{username}:{args.key_path}"
         print(f"发布信息:")
         print(f"  Key:   {key}")
         print(f"  Value: {args.value}")
@@ -363,7 +366,10 @@ def main():
             print(f"  结果: ❌ 发布失败")
 
     elif args.command == 'get':
-        key = f"vnpy:{username}:{args.key_path}"
+        if args.key_path.startswith('/'):
+            key = args.key_path[1:]
+        else:
+            key = f"vnpy:{username}:{args.key_path}"
         print(f"读取 Key: {key}")
         value = client.get_value(key)
         if value is not None:

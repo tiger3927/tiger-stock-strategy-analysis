@@ -1,8 +1,9 @@
 # VeighNa 统一命令工具 (vnpy_command.py)
 
-通过 Redis Proxy 向 data_engine 发送各类命令并获取执行结果。
+功能1：通过 HTTP Proxy 的 API 访问 Redis，不需要redis-cli。
 
-> ⚠️ **前提条件：量化系统必须正在运行**，否则命令堆积不被处理。
+功能2：通过 Redis Proxy 向 量化交易系统额 data_engine 发送各类命令并获取执行结果。
+> ⚠️ **前提条件：发送命令时，量化系统必须正在运行**，否则命令堆积不被处理。
 
 ### 用户参数说明
 
@@ -10,6 +11,10 @@
 
 - **已知用户名和 TOKEN 时**：直接使用即可。
 - **不知道用户名或 TOKEN 时**：搜索记忆中或对话历史中已确认的用户名和 TOKEN，或直接向用户询问确认。
+
+命令行参数可能带有中文和空格，需要使用引号括起来。
+
+key 如果是"/"开头，表示数据是不属于某个用户的公共数据，避免与用户相关的缓存冲突;否则，key 是用户相关的数据。
 
 ---
 
@@ -127,9 +132,32 @@ python scripts/vnpy_command.py --token tiger-code-123456 query-strategy-status t
 python scripts/vnpy_command.py [--token TOKEN] publish <用户名> <key路径> <值> [--expire N]
 ```
 
-向 Redis 写入一个 key-value（SET 操作），完整 key 为 `vnpy:{username}:{key_path}`。
+向 Redis 写入一个 key-value（SET 操作）。key 路径规则：
 
-- `key_path`：key 路径后缀，如 `analysis:result`、`notice:all`
+- **带用户前缀**：key_path 不以 `/` 开头，完整 key = `vnpy:{username}:{key_path}`
+  - 如 `analysis:result` → `vnpy:楠总1号:analysis:result`
+- **全局 key（无用户前缀）**：key_path 以 `/` 开头，完整 key = 去掉 `/` 后的内容
+  - 如 `/global:config` → `global:config`
+  - 如 `/vnpy:global:notice` → `vnpy:global:notice`
+
+参数：
+
+- `key_path`：key 路径后缀或全局 key（以 `/` 开头）
+- `value`：要写入的值（纯文本或 JSON 字符串）
+- `--expire N`：可选，过期时间（秒），不设置则永不过期
+
+示例：
+```bash
+# 带用户前缀
+python scripts/vnpy_command.py --token tiger-code-123456 publish 楠总1号 analysis:result '{"status":"ok"}' --expire 3600
+
+# 全局 key（无用户前缀）
+python scripts/vnpy_command.py --token tiger-code-123456 publish 楠总1号 /global:config '{"maintenance":false}'
+python scripts/vnpy_command.py --token tiger-code-123456 publish 楠总1号 /vnpy:notice:all "系统维护通知" --expire 86400
+
+# 保存大盘分析缓存（全局 key，6 小时过期）
+python scripts/vnpy_command.py --token tiger-code-123456 publish 楠总1号 /vnpy:加密货币:大盘与板块和资金流向分析 '{"direction":"看多","风险观察分":65}' --expire 21600
+```
 - `value`：要写入的值，纯文本或 JSON 字符串
 - `--expire N`：可选，过期时间（秒），不设置则永不过期
 
@@ -148,12 +176,23 @@ python scripts/vnpy_command.py --token tiger-code-123456 publish tiger-code noti
 python scripts/vnpy_command.py [--token TOKEN] get <用户名> <key路径>
 ```
 
-读取 Redis 中指定 key 的值（GET 操作），完整 key 为 `vnpy:{username}:{key_path}`。
+读取 Redis 中指定 key 的值（GET 操作）。key 路径规则同 publish：
+
+- **带用户前缀**：key_path 不以 `/` 开头，完整 key = `vnpy:{username}:{key_path}`
+- **全局 key**：key_path 以 `/` 开头，完整 key = 去掉 `/` 后的内容
 
 示例：
 ```bash
-# 读取之前发布的分析结果
-python scripts/vnpy_command.py --token tiger-code-123456 get tiger-code analysis:result
+# 读取带用户前缀的分析结果
+python scripts/vnpy_command.py --token tiger-code-123456 get 楠总1号 analysis:result
+
+# 读取全局 key
+python scripts/vnpy_command.py --token tiger-code-123456 get 楠总1号 /global:config
+# 等价于 Redis GET global:config
+
+# 读取大盘分析缓存（全局 key，不归属用户）
+python scripts/vnpy_command.py --token tiger-code-123456 get 楠总1号 /vnpy:加密货币:大盘与板块和资金流向分析
+# 等价于 Redis GET vnpy:加密货币:大盘与板块和资金流向分析
 ```
 
 ---
