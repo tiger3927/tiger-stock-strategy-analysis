@@ -80,6 +80,39 @@ US_STYLE = {
 }
 US_STYLE_TICKERS = ["VUG", "VTV"]
 
+# 行业龙头个股（用于美股分析）
+US_SECTOR_LEADERS = {
+    "NVDA": "英伟达（AI芯片龙头）",
+    "MSFT": "微软（AI+软件龙头）",
+    "META": "Meta（社交媒体+AI）",
+    "GOOG": "谷歌（AI+搜索）",
+    "AMZN": "亚马逊（云计算+电商）",
+    "SOXX": "半导体ETF",
+    "AMD": "AMD（CPU/GPU）",
+    "AVGO": "博通（网络/AI芯片）",
+    "TSM": "台积电（晶圆代工）",
+    "MU": "美光（存储芯片）",
+    "JPM": "摩根大通（银行龙头）",
+    "GS": "高盛（投行）",
+    "BAC": "美国银行",
+    "MS": "摩根士丹利",
+    "AAPL": "苹果（消费电子）",
+}
+US_SECTOR_LEADERS_TICKERS = list(US_SECTOR_LEADERS.keys())
+
+# 合并所有 US labels（用于 us-all 超级批次）
+US_ALL_LABELS = {}
+for d in [US_MAJOR_INDICES, US_MACRO, US_SECTORS, US_STYLE, US_SECTOR_LEADERS]:
+    US_ALL_LABELS.update(d)
+_seen = set()
+US_ALL_TICKERS = []
+for group in [US_MAJOR_INDICES_TICKERS, US_MACRO_TICKERS,
+              US_SECTORS_TICKERS, US_STYLE_TICKERS, US_SECTOR_LEADERS_TICKERS]:
+    for t in group:
+        if t not in _seen:
+            _seen.add(t)
+            US_ALL_TICKERS.append(t)
+
 CRYPTO_MAJORS = {
     "BTC-USD": "比特币",
     "ETH-USD": "以太坊",
@@ -120,12 +153,27 @@ CRYPTO_INFRA = {
 }
 CRYPTO_INFRA_TICKERS = ["LINK-USD", "RENDER-USD", "FET-USD", "AR-USD"]
 
+# 合并所有 crypto labels（用于 crypto-all 超级批次）
+CRYPTO_ALL_LABELS = {}
+for d in [CRYPTO_MAJORS, CRYPTO_ALT_L1, CRYPTO_DEFI, CRYPTO_MEME, CRYPTO_INFRA]:
+    CRYPTO_ALL_LABELS.update(d)
+_seen_crypto = set()
+CRYPTO_ALL_TICKERS = []
+for group in [CRYPTO_MAJORS_TICKERS, CRYPTO_ALT_L1_TICKERS,
+              CRYPTO_DEFI_TICKERS, CRYPTO_MEME_TICKERS, CRYPTO_INFRA_TICKERS]:
+    for t in group:
+        if t not in _seen_crypto:
+            _seen_crypto.add(t)
+            CRYPTO_ALL_TICKERS.append(t)
+
 # 预设批次映射
 BATCHES = {
+    "us-all":           {"tickers": US_ALL_TICKERS,     "labels": US_ALL_LABELS,     "desc": "美股全量（指数+宏观+板块+风格+龙头）"},
     "us-major-indices": {"tickers": US_MAJOR_INDICES_TICKERS, "labels": US_MAJOR_INDICES, "desc": "美股主要指数"},
     "us-macro":         {"tickers": US_MACRO_TICKERS,             "labels": US_MACRO,             "desc": "美股宏观指标"},
     "us-sectors":       {"tickers": US_SECTORS_TICKERS,           "labels": US_SECTORS,           "desc": "美股板块 ETF"},
     "us-style":         {"tickers": US_STYLE_TICKERS,             "labels": US_STYLE,             "desc": "美股风格 ETF"},
+    "crypto-all":      {"tickers": CRYPTO_ALL_TICKERS,   "labels": CRYPTO_ALL_LABELS,   "desc": "加密货币全量（核心+L1+DeFi+Meme+基础设施）"},
     "crypto-majors":    {"tickers": CRYPTO_MAJORS_TICKERS,        "labels": CRYPTO_MAJORS,        "desc": "加密货币核心"},
     "crypto-alt-l1":    {"tickers": CRYPTO_ALT_L1_TICKERS,        "labels": CRYPTO_ALT_L1,        "desc": "L1 公链"},
     "crypto-defi":      {"tickers": CRYPTO_DEFI_TICKERS,          "labels": CRYPTO_DEFI,          "desc": "DeFi 板块"},
@@ -135,8 +183,8 @@ BATCHES = {
 
 # 市场 → 可用批次
 MARKET_BATCHES = {
-    "us_stocks":  ["us-major-indices", "us-macro", "us-sectors", "us-style"],
-    "crypto":     ["crypto-majors", "crypto-alt-l1", "crypto-defi", "crypto-meme", "crypto-infra"],
+    "us_stocks":  ["us-all", "us-major-indices", "us-macro", "us-sectors", "us-style"],
+    "crypto":     ["crypto-all", "crypto-majors", "crypto-alt-l1", "crypto-defi", "crypto-meme", "crypto-infra"],
     "china_stocks":  [],
     "china_futures": [],
     "hk_stocks":     [],

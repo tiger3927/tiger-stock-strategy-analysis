@@ -30,24 +30,18 @@ python scripts/vnpy_command.py --token TOKEN get 用户名 /vnpy:{市场名}:大
 
 ```bash
 # 美股示例
-python scripts/get_market_data.py --market us_stocks --batch us-major-indices --output json
-python scripts/get_market_data.py --market us_stocks --batch us-sectors --output json
-python scripts/get_market_data.py --market us_stocks --batch us-macro --output json
+python scripts/get_market_data.py --market us_stocks --batch us-all --output json
 
 # 加密货币示例
-python scripts/get_market_data.py --market crypto --batch crypto-majors --output json
-python scripts/get_market_data.py --market crypto --batch crypto-alt-l1 --output json
+python scripts/get_market_data.py --market crypto --batch crypto-all --output json
 ```
 
 > 可用 `--list-batches` 查看当前市场所有预设批次。
 >
 > **ICI 资金流数据**（美股专用）：
 > ```bash
-> # 股基+ETF 综合净流入（周度）
-> python scripts/get_market_data.py --fetch-url ici-equity-flows --output json
->
-> # 货币基金 AUM（周度）
-> python scripts/get_market_data.py --fetch-url ici-mmf-assets --output json
+> # 股基+ETF 综合净流入 + 货币基金 AUM（一次获取）
+> python scripts/get_market_data.py --fetch-url all --output json
 > ```
 
 ### 第 4 步：执行分析
@@ -85,7 +79,7 @@ python scripts/vnpy_command.py --token TOKEN publish 用户名 /vnpy:{市场名}
 
 | 市场名 | 分析文档 | 数据批次 | 说明 |
 |---------|---------|---------|------|
-| 美股 | [美股](美股市场.md) | us-major-indices, us-macro, us-sectors, us-style | 适用于 IB gateway 连接的美股交易 |
-| 加密货币 | [加密货币](加密货币市场.md) | crypto-majors, crypto-alt-l1, crypto-defi, crypto-meme, crypto-infra | 适用于 Binance 等数字币交易 |
+| 美股 | [美股](美股市场.md) | us-all（含指数、宏观、板块、风格、龙头个股） | 适用于 IB gateway 连接的美股交易 |
+| 加密货币 | [加密货币](加密货币市场.md) | crypto-all（含核心、L1、DeFi、Meme、基础设施） | 适用于 Binance 等数字币交易 |
 
 > 其他市场（中国期货、中国A股等）待补充。
