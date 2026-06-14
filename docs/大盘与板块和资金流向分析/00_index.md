@@ -21,8 +21,8 @@ python scripts/vnpy_command.py --token TOKEN get 用户名 /vnpy:{市场名}:大
 
 ### 第 2 步：判断时效
 
-- 如果缓存存在 **且** 距今 **≤ 6 小时** → **直接完整返回缓存 JSON 的原始数据，本模块执行结束。禁止重新分析。**
-- 如果缓存不存在 **或** 距今 **> 6 小时** → 继续第 3 步
+- 如果缓存存在 **且** 距今 **≤ 12 小时** → **直接完整返回缓存 JSON 的原始数据，本模块执行结束。禁止重新分析。**
+- 如果缓存不存在 **或** 距今 **> 12 小时** → 继续第 3 步
 
 ### 第 3 步：获取市场数据
 
@@ -61,10 +61,10 @@ python scripts/get_market_data.py --market crypto --batch crypto-alt-l1 --output
 分析完成后，将 JSON 结果写入 Redis 缓存：
 
 ```bash
-python scripts/vnpy_command.py --token TOKEN publish 用户名 /vnpy:{市场名}:大盘与板块和资金流向分析 '{json结果}' --expire 21600
+python scripts/vnpy_command.py --token TOKEN publish 用户名 /vnpy:{市场名}:大盘与板块和资金流向分析 '{json结果}' --expire 43200
 ```
 
-- `--expire 21600` = 6 小时过期，与缓存时效一致
+- `--expire 43200` = 12 小时过期，与缓存时效一致
 
 ### 第 6 步：返回结果
 

@@ -1,6 +1,6 @@
 ---
 name: "tiger-stock-strategy-analysis"
-description: "股票量化策略分析工具：为 vnpy 量化软件提供策略分析和下单前审核。支持智能马丁格尔策略(openclaw-martin)、多信号权重评分趋势策略（Multi\_Signal\_Treand）、智能短期趋势策略(openclaw-trend)；可查询用户 redis 上的vnpy的量化交易账户信息、策略执行信息，并可向量化程序发送操作和查询指令（开平仓、调仓、行情查询等、查询盈透IBKR的conid）。无需 API key。"
+description: "股票量化策略分析工具：为 vnpy 量化软件提供策略分析和下单前审核。支持智能马丁格尔策略(openclaw-martin)、多信号权重评分趋势策略（Multi\_Signal\_Treand）、智能短期趋势策略(openclaw-trend)；可查询用户 redis 上的vnpy的量化交易账户信息、策略执行信息，并可向量化程序发送操作和查询指令（开平仓、调仓、行情查询等、查询盈透IBKR的conid）。无需 API key。以及，vnpy整体持仓分析与风控。"
 ---
 
 # tiger-stock-strategy-analysis
@@ -121,6 +121,12 @@ description: "股票量化策略分析工具：为 vnpy 量化软件提供策略
 |---------|---------|
 | 美股 | [美股市场](docs/大盘与板块和资金流向分析/美股市场.md) |
 | 加密货币 | [加密货币市场](docs/大盘与板块和资金流向分析/加密货币市场.md) |
+
+## vnpy整体持仓分析与风控
+
+本技能支持对指定用户的**量化交易账户整体状态**进行综合分析，包括账户风险评估、各策略持仓盈亏分析，并结合大盘与板块走势判断是否存在重大机会或风险，必要时发送控制命令进行调整。
+
+详细说明见 [docs/vnpy整体持仓分析与风控/00_index.md](docs/vnpy整体持仓分析与风控/00_index.md)。
 
 ## 你支持如下量化交易策略类型
 
