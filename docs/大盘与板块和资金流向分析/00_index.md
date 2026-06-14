@@ -59,6 +59,7 @@ python scripts/vnpy_command.py --token TOKEN publish 用户名 /vnpy:{市场名}
 ```
 
 - `--expire 43200` = 12 小时过期，与缓存时效一致
+- **⚠️ key path 必须严格使用 `{市场名}` 替换后的完整路径（如 `/vnpy:美股:大盘与板块和资金流向分析`），不得自定义 key 格式或路径。存错位置会导致缓存检查失效，定时任务反复重跑。**
 
 ### 第 6 步：返回结果
 

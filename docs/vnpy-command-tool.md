@@ -148,8 +148,8 @@ python scripts/vnpy_command.py [--token TOKEN] publish <用户名> <key路径> <
 
 示例：
 ```bash
-# 带用户前缀
-python scripts/vnpy_command.py --token tiger-code-123456 publish 楠总1号 analysis:result '{"status":"ok"}' --expire 3600
+# 带用户前缀（自定义 key）
+python scripts/vnpy_command.py --token tiger-code-123456 publish 楠总1号 user:strategy:status '{"running":true}' --expire 3600
 
 # 全局 key（无用户前缀）
 python scripts/vnpy_command.py --token tiger-code-123456 publish 楠总1号 /global:config '{"maintenance":false}'
@@ -163,8 +163,8 @@ python scripts/vnpy_command.py --token tiger-code-123456 publish 楠总1号 /vnp
 
 示例：
 ```bash
-# 发布分析结果 JSON
-python scripts/vnpy_command.py --token tiger-code-123456 publish tiger-code analysis:result '{"status":"ok"}' --expire 3600
+# 发布分析结果 JSON（全局 key）
+python scripts/vnpy_command.py --token tiger-code-123456 publish tiger-code /vnpy:analysis:daily '{"status":"ok"}' --expire 3600
 
 # 发布通知
 python scripts/vnpy_command.py --token tiger-code-123456 publish tiger-code notice:all "系统维护通知"
