@@ -15,7 +15,7 @@
 从下方「市场子模块」表格的「缓存 key」列取出当前市场的完整 key，执行查询。例如美股：
 
 ```bash
-python scripts/vnpy_command.py --token TOKEN get 用户名 /vnpy:美股:大盘与板块和资金流向分析
+python scripts/vnpy_command.py --token TOKEN get 用户名 "/vnpy:美股:大盘与板块和资金流向分析"
 ```
 
 - **替换规则**：将命令中的 `/vnpy:美股:大盘与板块和资金流向分析` 替换为表格中对应市场的完整 key
@@ -63,7 +63,7 @@ python scripts/get_market_data.py --market crypto --batch crypto-all --output js
 分析完成后，将 JSON 结果写入 Redis 缓存。从下方「市场子模块」表格的「缓存 key」列取出当前市场的完整 key，执行保存。例如美股：
 
 ```bash
-python scripts/vnpy_command.py --token TOKEN publish 用户名 /vnpy:美股:大盘与板块和资金流向分析 '{json结果}' --expire 43200
+python scripts/vnpy_command.py --token TOKEN publish 用户名 '/vnpy:美股:大盘与板块和资金流向分析' '{json结果}' --expire 43200
 ```
 
 - **替换规则**：将命令中的 `/vnpy:美股:大盘与板块和资金流向分析` 替换为表格中对应市场的完整 key
