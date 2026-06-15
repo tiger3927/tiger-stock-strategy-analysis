@@ -18,7 +18,6 @@ description: "股票量化策略分析工具：为 vnpy 量化软件提供策略
 如果上述文档中不包含，可以通过如下方式查询美股的盈透的conid：
 [docs/vnpy-command-tool.md](docs/vnpy-command-tool.md)
 
-
 ## 信息获取方法（缓存优先 + 增量更新）
 
 ### 尽量用如下外部技能获取股票的信息
@@ -103,37 +102,37 @@ description: "股票量化策略分析工具：为 vnpy 量化软件提供策略
 
 #### 支持的命令类型
 
-| 命令               | 说明                 |
-| ----------------- | -------------------- |
-| `conid`           | 查询股票 IB ConID     | 
-| `close`           | 全部平仓             |
-| `query_strategy_status` | 查询策略完整状态信息 |
-| `set_target_pos`  | 调整目标持仓量        |
-| `notice`          | 发送通知消息          |
-| `publish`         | 向 Redis 发布信息（SET） |
-| `get`             | 读取 Redis 信息（GET） |
+| 命令                      | 说明                |
+| ----------------------- | ----------------- |
+| `conid`                 | 查询股票 IB ConID     |
+| `close`                 | 全部平仓              |
+| `query_strategy_status` | 查询策略完整状态信息        |
+| `set_target_pos`        | 调整目标持仓量           |
+| `notice`                | 发送通知消息            |
+| `publish`               | 向 Redis 发布信息（SET） |
+| `get`                   | 读取 Redis 信息（GET）  |
 
 ## 大盘与板块和资金流向分析
 
-本技能支持对**不同交易市场**进行大盘走势、板块轮动和资金流向的综合分析。详细说明见 [docs/大盘与板块和资金流向分析/00_index.md](docs/大盘与板块和资金流向分析/00_index.md)。
+本技能支持对**不同交易市场**进行大盘走势、板块轮动和资金流向的综合分析。详细说明见 [docs/大盘与板块和资金流向分析/00\_index.md](docs/大盘与板块和资金流向分析/00_index.md)。
 
-所有市场的缓存 key 统一由 [00_index.md 的市场子模块表格](docs/大盘与板块和资金流向分析/00_index.md#市场子模块) 定义，**不得自定义 key 格式或路径**。
+所有市场的缓存 key 统一由 [00\_index.md 的市场子模块表格](docs/大盘与板块和资金流向分析/00_index.md#市场子模块) 定义，**不得自定义 key 格式或路径**。
 
-| 市场类型 | 分析文档 | 缓存 key |
-|---------|---------|---------|
-| 美股 | [美股市场](docs/大盘与板块和资金流向分析/美股市场.md) | `/vnpy:美股:大盘与板块和资金流向分析` |
+| 市场类型 | 分析文档                                  | 缓存 key                    |
+| ---- | ------------------------------------- | ------------------------- |
+| 美股   | [美股市场](docs/大盘与板块和资金流向分析/美股市场.md)     | `/vnpy:美股:大盘与板块和资金流向分析`   |
 | 加密货币 | [加密货币市场](docs/大盘与板块和资金流向分析/加密货币市场.md) | `/vnpy:加密货币:大盘与板块和资金流向分析` |
-| 中国期货 | 待补充 | `/vnpy:中国期货:大盘与板块和资金流向分析` |
-| 中国A股 | 待补充 | `/vnpy:中国A股:大盘与板块和资金流向分析` |
-| 港股 | 待补充 | `/vnpy:港股:大盘与板块和资金流向分析` |
-| 台股 | 待补充 | `/vnpy:台股:大盘与板块和资金流向分析` |
-| 日股 | 待补充 | `/vnpy:日股:大盘与板块和资金流向分析` |
+| 中国期货 | 待补充                                   | `/vnpy:中国期货:大盘与板块和资金流向分析` |
+| 中国A股 | 待补充                                   | `/vnpy:中国A股:大盘与板块和资金流向分析` |
+| 港股   | 待补充                                   | `/vnpy:港股:大盘与板块和资金流向分析`   |
+| 台股   | 待补充                                   | `/vnpy:台股:大盘与板块和资金流向分析`   |
+| 日股   | 待补充                                   | `/vnpy:日股:大盘与板块和资金流向分析`   |
 
 ## vnpy整体持仓分析与风控
 
 本技能支持对指定用户的**量化交易账户整体状态**进行综合分析，包括账户风险评估、各策略持仓盈亏分析，并结合大盘与板块走势判断是否存在重大机会或风险，必要时发送控制命令进行调整。
 
-详细说明见 [docs/vnpy整体持仓分析与风控/00_index.md](docs/vnpy整体持仓分析与风控/00_index.md)。
+详细说明见 [docs/vnpy整体持仓分析与风控/00\_index.md](docs/vnpy整体持仓分析与风控/00_index.md)。
 
 ## 你支持如下量化交易策略类型
 
@@ -173,13 +172,11 @@ description: "股票量化策略分析工具：为 vnpy 量化软件提供策略
 
 [docs/Short-term-CCI-Trend-Strategy.md](docs/Short-term-CCI-Trend-Strategy.md)
 
-
 ## CTA趋势策略基类说明
 
 一般无需深入了解基类原理；若确需查阅，入口文档如下：
 
-- [tiger_grid_template 策略基类文档](docs/Tiger-Grid-Template/00_index.md)
-
+- [tiger\_grid\_template 策略基类文档](docs/Tiger-Grid-Template/00_index.md)
 
 ## 输出
 
@@ -195,6 +192,15 @@ description: "股票量化策略分析工具：为 vnpy 量化软件提供策略
 git克隆到到工作区目录下的skills目录下，克隆的目录改名，本技能目录必须为：tiger-stock-strategy-analysis
 
 tiger-stock-strategy-analysis目录下应该有本SKILL.md，docs目录，scripts目录
+
+### scripts 目录依赖
+
+| 模块                             | 安装命令                                                | 用途                                   |
+| ------------------------------ | --------------------------------------------------- | ------------------------------------ |
+| `get_market_data.py`           | `pip install yfinance`                              | 获取结构化价格数据（含均线、52周百分位）                |
+| `get_market_data.py`（calendar） | `pip install -U camoufox[geoip]` + `camoufox fetch` | 必须绕过 Cloudflare 获取 ForexFactory 经济日历 |
+| `stock_redis_query.py`         | `pip install redis`                                 | 查询 Redis 中的策略状态和账户信息                 |
+| `vnpy_command.py`              | `pip install redis`                                 | 读写 Redis 缓存（get / publish）           |
 
 ***
 

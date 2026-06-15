@@ -6,12 +6,16 @@
   2. 支持自定义 ticker 列表
   3. 输出结构化 JSON，含价格、涨跌幅、均线、52 周百分位
   4. 支持缓存写入 Redis（可选）
+  5. --fetch-url product-all-info 获取单品种新闻+评级（替代 web_search）
+  6. --fetch-url calendar 获取全局经济日历（每小时 1 次，所有策略共享）
 
 用法：
   python get_market_data.py --market us_stocks --batch us-major-indices
   python get_market_data.py --market crypto --batch crypto-majors
   python get_market_data.py --market us_stocks --tickers AAPL,MSFT,GOOGL
   python get_market_data.py --market us_stocks --batch us-major-indices --output json
+  python get_market_data.py --fetch-url product-all-info --ticker AAPL --output json
+  python get_market_data.py --fetch-url calendar --output json
 
 市场参数：
   us_stocks     美股（默认）
@@ -19,12 +23,20 @@
   china_stocks  中国 A 股
   china_futures 中国期货
   hk_stocks     港股
+
+--fetch-url calendar 依赖安装（仅经济日历需要）：
+  pip install -U camoufox[geoip]
+  camoufox fetch
+--fetch-url product-all-info 仅需标准库 urllib，无需额外安装。
 """
 import sys
 import os
 import json
 import argparse
 import datetime
+import time
+import urllib.request
+import urllib.error
 from datetime import timezone
 import math
 import re
@@ -34,6 +46,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import yfinance as yf
 import requests
 from bs4 import BeautifulSoup
+import numpy as np
 
 
 # ==================== 预设批次 ====================
@@ -426,6 +439,455 @@ def format_ici_output(data: dict, source_name: str = "") -> str:
     return "\n".join(lines)
 
 
+# ==================== product-all-info / calendar 数据抓取 ====================
+#
+# 功能：
+#   --fetch-url product-all-info: 单品种新闻+评级（替代 2 次 web_search）
+#   --fetch-url calendar:        全局经济日历（每小时 1 次，所有策略共享）
+#
+# 数据源：
+#   - 新闻: Yahoo Finance RSS（urllib，无需额外安装）
+#   - 评级: MarketBeat JSON-LD（urllib，无需额外安装）
+#   - 经济日历: Camoufox + ForexFactory（绕过 Cloudflare）
+#
+# 安装依赖（仅 calendar 需要）：
+#   pip install -U camoufox[geoip]
+#   camoufox fetch
+#
+# 用法：
+#   python get_market_data.py --fetch-url product-all-info --ticker AAPL --output json
+#   python get_market_data.py --fetch-url calendar --output json
+# ============================================================
+
+def _fetch_url(url, headers=None, timeout=15, retries=2):
+    """通用 HTTP GET 请求，带重试"""
+    default_headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/125.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+    }
+    if headers:
+        default_headers.update(headers)
+
+    last_error = None
+    for attempt in range(retries + 1):
+        try:
+            req = urllib.request.Request(url, headers=default_headers)
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return resp.read().decode("utf-8", errors="replace")
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as e:
+            last_error = e
+            if attempt < retries:
+                time.sleep(1)
+    return None
+
+
+def _clean_html(text):
+    """去除 HTML 标签，合并空白"""
+    text = re.sub(r'<[^>]+>', '', text)
+    text = re.sub(r'\s+', ' ', text)
+    return text.strip()
+
+
+def fetch_news(ticker):
+    """
+    从 Yahoo Finance RSS 获取近 7 天新闻
+    URL: https://finance.yahoo.com/rss/headline?s={ticker}
+    """
+    url = f"https://finance.yahoo.com/rss/headline?s={ticker}"
+    html = _fetch_url(url)
+    if not html:
+        return {"count": 0, "items": [], "error": "Yahoo RSS 无响应"}
+
+    news = []
+    current = {}
+    for line in html.split("\n"):
+        line = line.strip()
+        if line.startswith("<title>") and "Yahoo Finance" not in line:
+            title = line.replace("<title>", "").replace("</title>", "").strip()
+            if title:
+                current["title"] = title
+        elif line.startswith("<pubDate>"):
+            current["date"] = line.replace("<pubDate>", "").replace("</pubDate>", "").strip()
+        elif line.startswith("<link>") and "</link>" in line:
+            current["link"] = line.replace("<link>", "").replace("</link>", "").strip()
+        elif line == "</item>":
+            if current.get("title"):
+                news.append(current)
+            current = {}
+
+    return {"count": len(news), "items": news[:10]}
+
+
+def fetch_ratings(ticker):
+    """
+    从 MarketBeat 获取机构评级
+    数据来源：JSON-LD (FAQPage) + HTML 表格
+    URL: https://www.marketbeat.com/stocks/NASDAQ/{ticker}/price-target/
+    """
+    url = f"https://www.marketbeat.com/stocks/NASDAQ/{ticker}/price-target/"
+    html = _fetch_url(url)
+    if not html:
+        url = f"https://www.marketbeat.com/stocks/NYSE/{ticker}/price-target/"
+        html = _fetch_url(url)
+
+    if not html:
+        return {"error": "MarketBeat 无响应"}
+
+    result = {}
+
+    # 方法1: 从 JSON-LD FAQPage 提取
+    for m in re.finditer(
+        r'<script[^>]*type="application/ld\+json"[^>]*>(.*?)</script>',
+        html, re.DOTALL
+    ):
+        try:
+            data = json.loads(m.group(1))
+            if isinstance(data, dict) and data.get("@type") == "FAQPage":
+                for item in data.get("mainEntity", []):
+                    text = item.get("acceptedAnswer", {}).get("text", "")
+                    tm = re.search(r'\$?([\d,.]+)\s*,\s*with a high forecast of \$?([\d,.]+)\s*and a low forecast of \$?([\d,.]+)', text)
+                    if tm:
+                        result["consensus_target"] = float(tm.group(1).replace(",", "").rstrip("."))
+                        result["target_high"] = float(tm.group(2).replace(",", "").rstrip("."))
+                        result["target_low"] = float(tm.group(3).replace(",", "").rstrip("."))
+                    am = re.search(r'(\d+)\s+Wall Street', text)
+                    if am:
+                        result["analyst_count"] = int(am.group(1))
+        except (json.JSONDecodeError, AttributeError):
+            continue
+
+    # 方法2: 从 HTML 表格提取评级分布
+    tables = re.findall(r'<table[^>]*>(.*?)</table>', html, re.DOTALL)
+    for table in tables:
+        ratings_dist = {}
+        for rating in ["Strong Buy", "Buy", "Hold", "Sell", "Strong Sell"]:
+            m = re.search(
+                rf'<td[^>]*>{re.escape(rating)}</td><td[^>]*>(\d+)\s*rating',
+                table
+            )
+            if m:
+                ratings_dist[rating] = int(m.group(1))
+        if ratings_dist:
+            result["ratings_distribution"] = ratings_dist
+
+        m = re.search(r'Consensus Rating Score</strong></td><td[^>]*>([\d.]+)', table)
+        if m:
+            result["consensus_score"] = float(m.group(1))
+
+        m = re.search(r'Consensus Rating</strong></td><td[^>]*>(.*?)</td>', table, re.DOTALL)
+        if m:
+            result["consensus_rating"] = _clean_html(m.group(1))
+
+    # 方法3: 从 JSON-LD WebPage description 提取
+    for m in re.finditer(
+        r'<script[^>]*type="application/ld\+json"[^>]*>(.*?)</script>',
+        html, re.DOTALL
+    ):
+        try:
+            data = json.loads(m.group(1))
+            if isinstance(data, dict) and data.get("@type") == "WebPage":
+                desc = data.get("description", "")
+                tm = re.search(r'\$?([\d,.]+)', desc)
+                if tm and "consensus_target" not in result:
+                    result["consensus_target"] = float(tm.group(1).replace(",", ""))
+        except (json.JSONDecodeError, AttributeError):
+            continue
+
+    return result
+
+
+def fetch_economic_calendar():
+    """
+    获取未来一周经济日历
+    源1: Camoufox + ForexFactory（绕过 Cloudflare，完整经济数据）
+    源2: Fed Calendar（FOMC 会议日期，备用补充）
+    """
+    results = []
+
+    # 源1: Camoufox + ForexFactory
+    try:
+        from camoufox.sync_api import Camoufox
+
+        with Camoufox(
+            headless=True,
+            humanize=True,
+            geoip=True,
+            block_webrtc=True,
+        ) as browser:
+            page = browser.new_page()
+            page.goto("https://www.forexfactory.com/calendar", timeout=60000)
+            page.wait_for_selector("table.calendar__table", timeout=30000)
+            page.wait_for_timeout(2000)
+
+            content = page.content()
+
+        dates = re.findall(
+            r'<td[^>]*class="[^"]*calendar__date[^"]*"[^>]*>(.*?)</td>',
+            content, re.DOTALL
+        )
+        events = re.findall(
+            r'<td[^>]*class="[^"]*calendar__event[^"]*"[^>]*>(.*?)</td>',
+            content, re.DOTALL
+        )
+        currencies = re.findall(
+            r'<td[^>]*class="[^"]*calendar__currency[^"]*"[^>]*>(.*?)</td>',
+            content, re.DOTALL
+        )
+        impacts = re.findall(
+            r'<td[^>]*class="[^"]*calendar__impact[^"]*"[^>]*>(.*?)</td>',
+            content, re.DOTALL
+        )
+        actuals = re.findall(
+            r'<td[^>]*class="[^"]*calendar__actual[^"]*"[^>]*>(.*?)</td>',
+            content, re.DOTALL
+        )
+        forecasts = re.findall(
+            r'<td[^>]*class="[^"]*calendar__forecast[^"]*"[^>]*>(.*?)</td>',
+            content, re.DOTALL
+        )
+        previous = re.findall(
+            r'<td[^>]*class="[^"]*calendar__previous[^"]*"[^>]*>(.*?)</td>',
+            content, re.DOTALL
+        )
+
+        for i in range(min(len(events), 50)):
+            results.append({
+                "date": _clean_html(dates[i]) if i < len(dates) else "?",
+                "currency": _clean_html(currencies[i]) if i < len(currencies) else "?",
+                "event": _clean_html(events[i]) if i < len(events) else "?",
+                "impact": _clean_html(impacts[i]) if i < len(impacts) else "?",
+                "actual": _clean_html(actuals[i]) if i < len(actuals) else "-",
+                "forecast": _clean_html(forecasts[i]) if i < len(forecasts) else "-",
+                "previous": _clean_html(previous[i]) if i < len(previous) else "-",
+                "source": "forexfactory"
+            })
+
+    except ImportError:
+        # Camoufox 未安装，降级尝试 urllib 直连
+        url = "https://www.forexfactory.com/calendar.php?month=" + datetime.datetime.now().strftime("%b%Y").lower()
+        html = _fetch_url(url, timeout=10)
+        if html and len(html) > 1000:
+            dates = re.findall(r'<td[^>]*class="[^"]*date[^"]*"[^>]*>(.*?)</td>', html, re.DOTALL)
+            events = re.findall(r'<td[^>]*class="[^"]*event[^"]*"[^>]*>(.*?)</td>', html, re.DOTALL)
+            currencies = re.findall(r'<td[^>]*class="[^"]*currency[^"]*"[^>]*>(.*?)</td>', html, re.DOTALL)
+            for i in range(min(len(events), 50)):
+                results.append({
+                    "date": _clean_html(dates[i]) if i < len(dates) else "?",
+                    "currency": _clean_html(currencies[i]) if i < len(currencies) else "?",
+                    "event": _clean_html(events[i]) if i < len(events) else "?",
+                    "source": "forexfactory"
+                })
+    except Exception:
+        pass
+
+    # 源2: Fed Calendar (FOMC 会议，备用补充)
+    url2 = "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+    html = _fetch_url(url2, timeout=10)
+    if html:
+        fomc_dates = re.findall(
+            r'<div[^>]*class="fomc-meeting__date[^"]*"[^>]*>(.*?)</div>',
+            html, re.DOTALL
+        )
+        fomc_months = re.findall(
+            r'<div[^>]*class="fomc-meeting__month[^"]*"[^>]*>(.*?)</div>',
+            html, re.DOTALL
+        )
+        for i in range(min(len(fomc_dates), 8)):
+            month = _clean_html(fomc_months[i]) if i < len(fomc_months) else ""
+            date = _clean_html(fomc_dates[i])
+            results.append({
+                "date": f"{month} {date}",
+                "event": "FOMC Meeting",
+                "source": "federalreserve"
+            })
+
+    return results
+
+
+# ==================== 技术指标计算（替代 AI 推理步骤） ====================
+#
+# 功能：计算 ATR(14)、CCI(14)、三级支撑/压力位、风险收益比、价格分位
+# 数据源：yfinance 历史数据
+# 用途：集成到 product-all-info 输出，避免 AI 每次手动计算
+# ============================================================
+
+
+def calc_atr(df, period=14):
+    """计算 ATR(14)"""
+    high = df["High"].values
+    low = df["Low"].values
+    close = df["Close"].values
+
+    tr = np.maximum(
+        high[1:] - low[1:],
+        np.maximum(
+            np.abs(high[1:] - close[:-1]),
+            np.abs(low[1:] - close[:-1])
+        )
+    )
+    atr = float(np.mean(tr[-period:]))
+    return round(atr, 4)
+
+
+def calc_cci(df, period=14):
+    """计算 CCI(14)"""
+    high = df["High"].values
+    low = df["Low"].values
+    close = df["Close"].values
+
+    tp = (high + low + close) / 3  # 典型价格
+    sma = np.mean(tp[-period:])
+    mad = np.mean(np.abs(tp[-period:] - sma))
+
+    if mad == 0:
+        return 0.0
+    cci = float((tp[-1] - sma) / (0.015 * mad))
+    return round(cci, 2)
+
+
+def find_support_resistance(df, num_levels=3):
+    """
+    基于近 3 个月价格数据，用直方图密度峰谷检测法找支撑压力位。
+    返回 (support_levels, resistance_levels)，各 num_levels 个，由近到远排列。
+    """
+    close = df["Close"].values
+    high = df["High"].values
+    low = df["Low"].values
+
+    current_price = close[-1]
+
+    # 用所有 high/low 作为候选点
+    all_points = np.concatenate([high, low])
+    all_points = np.sort(all_points)
+
+    # 用直方图密度估计找密集区
+    hist, edges = np.histogram(all_points, bins=50)
+
+    # 找波峰（密集区 = 支撑/压力位）
+    peaks = []
+    for i in range(1, len(hist) - 1):
+        if hist[i] > hist[i-1] and hist[i] > hist[i+1] and hist[i] > 1:
+            peak_price = float((edges[i] + edges[i+1]) / 2)
+            peaks.append(peak_price)
+
+    peaks = sorted(peaks)
+
+    # 低于当前价格的为支撑位，高于的为压力位
+    supports = [p for p in peaks if p < current_price]
+    resistances = [p for p in peaks if p > current_price]
+
+    # 取最近的 num_levels 个
+    supports = supports[-num_levels:] if len(supports) >= num_levels else supports
+    resistances = resistances[:num_levels] if len(resistances) >= num_levels else resistances
+
+    # 补齐到 num_levels 个（用百分比偏移）
+    while len(supports) < num_levels:
+        if supports:
+            last = supports[0]
+            supports.insert(0, round(last * 0.95, 2))
+        else:
+            supports.append(round(float(current_price) * 0.9, 2))
+
+    while len(resistances) < num_levels:
+        if resistances:
+            last = resistances[-1]
+            resistances.append(round(last * 1.05, 2))
+        else:
+            resistances.append(round(float(current_price) * 1.1, 2))
+
+    # 取最近的 num_levels 个
+    supports = supports[-num_levels:]
+    resistances = resistances[:num_levels]
+
+    return [round(float(s), 2) for s in supports], [round(float(r), 2) for r in resistances]
+
+
+def calc_price_percentile(df, period_days):
+    """计算当前价格在指定周期内的分位"""
+    close = df["Close"].values
+    current = close[-1]
+    window = close[-period_days:] if len(close) >= period_days else close
+    low, high = float(np.min(window)), float(np.max(window))
+    if high == low:
+        return 0.5
+    return round(float((current - low) / (high - low)), 4)
+
+
+def fetch_technical_indicators(ticker):
+    """
+    获取单品种技术指标（ATR、CCI、支撑压力位、风险收益比、价格分位）
+    替代 AI 的 ~8 步推理计算
+    """
+    stock = yf.Ticker(ticker)
+
+    # 近 3 个月日线
+    df_3mo = stock.history(period="3mo")
+    if df_3mo.empty:
+        return {"error": f"无法获取 {ticker} 的 3 个月数据"}
+
+    current_price = round(float(df_3mo["Close"].iloc[-1]), 2)
+
+    # 近 5 日（用于 24h 分位近似）
+    df_5d = stock.history(period="5d")
+    if df_5d.empty:
+        df_5d = df_3mo.tail(5)
+
+    # 计算各项指标
+    atr = calc_atr(df_3mo)
+    atr_pct = round(atr / current_price * 100, 2) if current_price > 0 else 0
+    cci = calc_cci(df_3mo)
+    supports, resistances = find_support_resistance(df_3mo)
+
+    # 风险收益比
+    risk_reward_long = None
+    risk_reward_short = None
+    if supports and resistances:
+        s1, r1 = supports[-1], resistances[0]
+        if (current_price - s1) > 0:
+            risk_reward_long = round((r1 - current_price) / (current_price - s1), 2)
+        if (r1 - current_price) > 0:
+            risk_reward_short = round((current_price - s1) / (r1 - current_price), 2)
+
+    # 价格分位
+    percentile_24h = calc_price_percentile(df_5d, min(len(df_5d), 5))
+    percentile_3mo = calc_price_percentile(df_3mo, len(df_3mo))
+
+    return {
+        "current_price": current_price,
+        "atr_14": atr,
+        "atr_pct": atr_pct,
+        "cci_14": cci,
+        "support_levels": supports,
+        "resistance_levels": resistances,
+        "risk_reward_long": risk_reward_long,
+        "risk_reward_short": risk_reward_short,
+        "近24h价格分位": percentile_24h,
+        "近3月价格分位": percentile_3mo,
+    }
+
+
+def fetch_product_all_info(ticker):
+    """
+    一站式获取单品种信息（新闻+评级+技术指标）
+    替代 2 次 web_search + ~8 步 AI 推理
+    """
+    result = {
+        "ticker": ticker.upper(),
+        "fetched_at": datetime.datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+
+    result["news"] = fetch_news(ticker)
+    result["ratings"] = fetch_ratings(ticker)
+    result["technical"] = fetch_technical_indicators(ticker)
+
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="市场数据获取工具 — 统一数据入口",
@@ -462,13 +924,61 @@ def main():
     parser.add_argument("--list-batches", action="store_true",
                         help="列出当前市场可用的预设批次")
     parser.add_argument("--fetch-url", type=str, default=None,
-                        choices=list(ICI_URLS.keys()) + ["all"],
-                        help=f"抓取 ICI 数据源表格: {', '.join(ICI_URLS.keys())}, 或 all 抓取全部")
+                        choices=list(ICI_URLS.keys()) + ["all", "product-all-info", "calendar"],
+                        help=f"抓取数据: {', '.join(ICI_URLS.keys())}, all(全部ICI), product-all-info(单品种新闻+评级), 或 calendar(全局经济日历)")
+    parser.add_argument("--ticker", type=str, default=None,
+                        help="用于 --fetch-url product-all-info 的 ticker，如 AAPL")
 
     args = parser.parse_args()
 
-    # 抓取 ICI 数据
+    # 抓取数据
     if args.fetch_url:
+        if args.fetch_url == "product-all-info":
+            if not args.ticker:
+                print("❌ --fetch-url product-all-info 需要 --ticker 参数")
+                sys.exit(1)
+            data = fetch_product_all_info(args.ticker)
+            if args.output == "json":
+                print(json.dumps(data, ensure_ascii=False, indent=2))
+            else:
+                print(f"=== {args.ticker.upper()} 信息汇总 ===")
+                print(f"\n--- 新闻 ({data['news']['count']} 条) ---")
+                for item in data['news']['items'][:5]:
+                    print(f"  [{item.get('date','?')}] {item['title'][:80]}")
+                print(f"\n--- 评级 ---")
+                r = data['ratings']
+                if 'error' in r:
+                    print(f"  {r['error']}")
+                else:
+                    print(f"  共识评级: {r.get('consensus_rating', '?')}")
+                    print(f"  目标价: ${r.get('consensus_target', '?')}")
+                    print(f"  分析师: {r.get('analyst_count', '?')}人")
+                print(f"\n--- 技术指标 ---")
+                t = data['technical']
+                if 'error' in t:
+                    print(f"  {t['error']}")
+                else:
+                    print(f"  当前价格: ${t.get('current_price', '?')}")
+                    print(f"  ATR(14): ${t.get('atr_14', '?')} ({t.get('atr_pct', '?')}%)")
+                    print(f"  CCI(14): {t.get('cci_14', '?')}")
+                    print(f"  三级支撑位: {t.get('support_levels', '?')}")
+                    print(f"  三级压力位: {t.get('resistance_levels', '?')}")
+                    print(f"  做多风险收益比: {t.get('risk_reward_long', '?')}")
+                    print(f"  做空风险收益比: {t.get('risk_reward_short', '?')}")
+                    print(f"  近24h价格分位: {t.get('近24h价格分位', '?')}")
+                    print(f"  近3月价格分位: {t.get('近3月价格分位', '?')}")
+            return
+
+        if args.fetch_url == "calendar":
+            data = fetch_economic_calendar()
+            if args.output == "json":
+                print(json.dumps(data, ensure_ascii=False, indent=2))
+            else:
+                print(f"=== 全局经济日历 ({len(data)} 条) ===")
+                for item in data[:15]:
+                    print(f"  {item.get('date','?'):12s} | {item.get('event','?'):45s} | {item.get('source','?')}")
+            return
+
         if args.fetch_url == "all":
             sources = list(ICI_URLS.keys())
         else:

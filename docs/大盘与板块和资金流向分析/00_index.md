@@ -45,6 +45,12 @@ python scripts/get_market_data.py --market crypto --batch crypto-all --output js
 > # 股基+ETF 综合净流入 + 货币基金 AUM（一次获取）
 > python scripts/get_market_data.py --fetch-url all --output json
 > ```
+>
+> **全局经济日历**（所有市场共享，每小时 1 次）：
+> ```bash
+> # 非农/CPI/FOMC/央行利率等全部经济事件
+> python scripts/get_market_data.py --fetch-url calendar --output json
+> ```
 
 ### 第 4 步：执行分析
 
