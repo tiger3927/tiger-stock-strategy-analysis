@@ -883,15 +883,20 @@ def calc_price_percentile(df, period_days):
 
 def fetch_technical_indicators(ticker):
     """
-    获取单品种技术指标（ATR、CCI、支撑压力位、风险收益比、价格分位）
+    获取单品种技术指标（ATR、CCI、支撑压力位、MA、成交量、风险收益比、价格分位）
     替代 AI 的 ~8 步推理计算
     """
     stock = yf.Ticker(ticker)
 
-    # 近 3 个月日线
+    # 近 3 个月日线（用于 ATR, CCI, 支撑压力位）
     df_3mo = stock.history(period="3mo")
     if df_3mo.empty:
         return {"error": f"无法获取 {ticker} 的 3 个月数据"}
+
+    # 近 1 年日线（用于均线计算，MA200 需要约 200 个交易日）
+    df_1y = stock.history(period="1y")
+    if df_1y.empty:
+        df_1y = df_3mo
 
     current_price = round(float(df_3mo["Close"].iloc[-1]), 2)
 
@@ -899,6 +904,20 @@ def fetch_technical_indicators(ticker):
     df_5d = stock.history(period="5d")
     if df_5d.empty:
         df_5d = df_3mo.tail(5)
+
+    # 计算均线
+    def ma(df, period):
+        if len(df) >= period:
+            return round(float(df["Close"].tail(period).mean()), 2)
+        return None
+
+    ma_20 = ma(df_1y, 20)
+    ma_50 = ma(df_1y, 50)
+    ma_200 = ma(df_1y, 200)
+
+    # 成交量
+    latest = df_1y.iloc[-1]
+    volume = int(latest["Volume"]) if not math.isnan(latest["Volume"]) else None
 
     # 计算各项指标
     atr = calc_atr(df_3mo)
@@ -922,6 +941,10 @@ def fetch_technical_indicators(ticker):
 
     return {
         "current_price": current_price,
+        "ma_20": ma_20,
+        "ma_50": ma_50,
+        "ma_200": ma_200,
+        "volume": volume,
         "atr_14": atr,
         "atr_pct": atr_pct,
         "cci_14": cci,
@@ -1022,6 +1045,14 @@ def main():
                     print(f"  {t['error']}")
                 else:
                     print(f"  当前价格: ${t.get('current_price', '?')}")
+                    print(f"  成交量: {t.get('volume', '?')}")
+                    ma_parts = []
+                    for p in ["ma_20", "ma_50", "ma_200"]:
+                        v = t.get(p)
+                        if v is not None:
+                            ma_parts.append(f"{p.replace('ma_', 'MA')}=${v}")
+                    if ma_parts:
+                        print(f"  均线: {', '.join(ma_parts)}")
                     print(f"  ATR(14): ${t.get('atr_14', '?')} ({t.get('atr_pct', '?')}%)")
                     print(f"  CCI(14): {t.get('cci_14', '?')}")
                     print(f"  三级支撑位: {t.get('support_levels', '?')}")
