@@ -497,6 +497,21 @@ def fetch_news(ticker):
     """
     从 Yahoo Finance RSS 获取近 7 天新闻
     URL: https://finance.yahoo.com/rss/headline?s={ticker}
+
+    预期 RSS 结构:
+      <rss><channel>
+        <item>
+          <title>新闻标题</title>
+          <pubDate>Mon, 15 Jun 2026 08:28:56 +0000</pubDate>
+          <link>https://...</link>
+        </item>
+        ...
+      </channel></rss>
+
+    故障排查:
+      - 返回空: 检查 ticker 是否有效，URL 是否可访问
+      - 解析失败: Yahoo 可能改了 RSS 格式，检查 <item> 内标签名
+      - 降级: 可改用 yfinance 的 news 属性（stock.news）
     """
     url = f"https://finance.yahoo.com/rss/headline?s={ticker}"
     html = _fetch_url(url)
@@ -526,8 +541,30 @@ def fetch_news(ticker):
 def fetch_ratings(ticker):
     """
     从 MarketBeat 获取机构评级
-    数据来源：JSON-LD (FAQPage) + HTML 表格
-    URL: https://www.marketbeat.com/stocks/NASDAQ/{ticker}/price-target/
+
+    URL 规则:
+      NASDAQ: https://www.marketbeat.com/stocks/NASDAQ/{ticker}/price-target/
+      NYSE:   https://www.marketbeat.com/stocks/NYSE/{ticker}/price-target/
+
+    提取方法（按优先级）:
+      方法1: JSON-LD FAQPage → consensus_target, target_high, target_low, analyst_count
+        预期 JSON-LD 结构:
+        {
+          "@type": "FAQPage",
+          "mainEntity": [{
+            "acceptedAnswer": {
+              "text": "$314.59, with a high forecast of $400.00 and a low forecast of $200.00"
+            }
+          }]
+        }
+      方法2: HTML 评级分布表格 → ratings_distribution, consensus_score, consensus_rating
+      方法3: JSON-LD WebPage description → consensus_target（兜底）
+
+    故障排查:
+      - 全部失败: MarketBeat 可能改版了 JSON-LD 结构
+      - 方法1 失败: 检查 FAQPage 的 mainEntity 结构
+      - 方法2 失败: 检查 ratings_distribution 表格的 HTML 结构
+      - 降级: 可改用 TipRanks 或 Yahoo Finance 的评级数据
     """
     url = f"https://www.marketbeat.com/stocks/NASDAQ/{ticker}/price-target/"
     html = _fetch_url(url)
@@ -604,8 +641,34 @@ def fetch_ratings(ticker):
 def fetch_economic_calendar():
     """
     获取未来一周经济日历
-    源1: Camoufox + ForexFactory（绕过 Cloudflare，完整经济数据）
+
+    源1: Camoufox + ForexFactory（主数据源，绕过 Cloudflare）
+      URL: https://www.forexfactory.com/calendar
+      预期 HTML 结构:
+      <table class="calendar__table">
+        <tr>
+          <td class="calendar__date">Jun15</td>
+          <td class="calendar__event">CPI m/m</td>
+          <td class="calendar__currency">USD</td>
+          <td class="calendar__impact icon--ff-impact-red"></td>
+          <td class="calendar__actual">0.2%</td>
+          <td class="calendar__forecast">0.3%</td>
+          <td class="calendar__previous">0.1%</td>
+        </tr>
+      </table>
+
     源2: Fed Calendar（FOMC 会议日期，备用补充）
+      URL: https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm
+      预期 HTML 结构:
+      <div class="fomc-meeting__month">June</div>
+      <div class="fomc-meeting__date">17-18</div>
+
+    故障排查:
+      - Camoufox ImportError: 未安装 camoufox，执行 pip install -U camoufox[geoip] && camoufox fetch
+      - ForexFactory 返回空: Cloudflare 可能更新了挑战，检查 Camoufox 版本（pip show camoufox）
+      - 正则匹配 0 条: ForexFactory 改了 CSS class 名，检查页面实际 class（用浏览器 F12 查看）
+      - 超时: 网络问题，检查代理设置或增加 timeout
+      - 降级: 自动 fallback 到 urllib 直连（可能被 Cloudflare 拦截，但 Fed Calendar 仍可用）
     """
     results = []
 
