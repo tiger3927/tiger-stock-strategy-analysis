@@ -29,7 +29,7 @@
 在开始任何分析之前，必须先获取以下数据。
 **禁止跳过这里任何一个获取数据的步骤直接分析。**
 
-**1. 必须获取"大盘与板块和资金流向分析"缓存（全局市场环境）**
+**1. 每次分析前，必须获取"大盘与板块和资金流向分析"缓存（全局市场环境）**
 根据品种所属市场选其一执行：
 - 美股：`python scripts/vnpy_command.py get - /vnpy:美股:大盘与板块和资金流向分析`
 - 加密货币：`python scripts/vnpy_command.py get - /vnpy:加密货币:大盘与板块和资金流向分析`
@@ -37,7 +37,7 @@
 - 中国A股：`python scripts/vnpy_command.py get - /vnpy:中国A股:大盘与板块和资金流向分析`
 - 港股：`python scripts/vnpy_command.py get - /vnpy:港股:大盘与板块和资金流向分析`
 
-**2. 必须获取个股信息（新闻+评级+技术指标：ATR/CCI/支撑压力/均线/成交量/风险收益比/价格分位）**
+**2.  每次分析前，必须获取个股信息（新闻+评级+技术指标：ATR/CCI/支撑压力/均线/成交量/风险收益比/价格分位）**
 必须从[股票品种表](../../scripts/vt_symbol_info.json) 查找 vt_symbol 对应的 yahoo ticker，例如 `265598.SMART → AAPL`
 ```bash
 python scripts/get_market_data.py --fetch-url product-all-info --ticker {yahoo_ticker} --output json
