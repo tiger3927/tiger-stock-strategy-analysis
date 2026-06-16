@@ -1054,6 +1054,141 @@ def fetch_product_all_info(ticker):
     return result
 
 
+def search_yfinance_ticker(query, max_candidates=5):
+    """
+    综合搜索 yfinance ticker
+    输入: 字符串（可能是 vt_symbol、公司名称、公司代称、加密货币名称等）
+    输出: {
+        "query": str,         # 原始查询
+        "matched": bool,      # 是否匹配成功
+        "ticker": str,        # 匹配到的 yahoo ticker
+        "name": str,          # 品种名称
+        "exchange": str,      # 交易所
+        "quote_type": str,    # 类型（EQUITY/CRYPTOCURRENCY/ETF等）
+        "source": str,        # 匹配来源: vt_symbol_info / yf_info_verify / yf_search
+        "candidates": [...],  # 候选列表
+    }
+
+    搜索策略（按优先级，每步失败自动 fallback 到下一步）:
+      1. vt_symbol_info.json 查表（vt_symbol key + ticker 字段 + name 字段）
+      2. yf.Ticker(query).info 验证（直接当 yahoo ticker 用）
+      3. yf.Search() 模糊搜索兜底
+
+    每步都包裹 try/except，避免中间步骤异常中断整个搜索流程。
+    """
+    # vt_symbol_info.json 路径（相对于当前脚本）
+    _vt_info_path = os.path.join(os.path.dirname(__file__), "vt_symbol_info.json")
+
+    result = {
+        "query": query,
+        "matched": False,
+        "ticker": None,
+        "name": None,
+        "exchange": None,
+        "quote_type": None,
+        "source": None,
+        "candidates": [],
+    }
+
+    query_lower = query.strip().lower()
+
+    # ========== 步骤 1: vt_symbol_info.json 查表 ==========
+    # 同时匹配 vt_symbol key（如 265598.SMART）、ticker 字段（如 AAPL）、name 字段（如 Apple）
+    try:
+        with open(_vt_info_path, "r", encoding="utf-8") as f:
+            vt_info = json.load(f)
+
+        for vt_key, info in vt_info.items():
+            ticker_in_file = info.get("ticker", "").lower()
+            name_in_file = info.get("name", "").lower()
+            name_cn = info.get("name_cn", "").lower()
+            vt_key_lower = vt_key.lower()
+
+            # 匹配: vt_symbol 完整值、vt_symbol 不含后缀（如 265598）、ticker、name、name_cn
+            vt_key_no_suffix = vt_key_lower.split(".")[0] if "." in vt_key_lower else vt_key_lower
+
+            if (query_lower == ticker_in_file
+                    or query_lower == name_in_file
+                    or query_lower == name_cn
+                    or query_lower == vt_key_lower
+                    or query_lower == vt_key_no_suffix):
+                result["matched"] = True
+                result["ticker"] = info["ticker"]
+                result["name"] = info.get("name_cn") or info.get("name", "")
+                result["exchange"] = "NMS" if "SMART" in vt_key.upper() else info.get("exchange", "")
+                result["quote_type"] = info.get("quote_type", "EQUITY")
+                result["source"] = "vt_symbol_info"
+                # 添加候选
+                result["candidates"] = [{
+                    "symbol": info["ticker"],
+                    "name": info.get("name_cn") or info.get("name", ""),
+                    "exchange": result["exchange"],
+                    "quote_type": result["quote_type"],
+                }]
+                return result
+    except Exception as e:
+        # vt_symbol_info.json 读取失败不中断，继续下一步
+        pass
+
+    # ========== 步骤 2: yf.Ticker(query).info 验证 ==========
+    # 把 query 直接当作 yahoo ticker，用 info 快速验证是否存在
+    try:
+        t = yf.Ticker(query.strip().upper())
+        info = t.info
+        # info 为空或缺少关键字段说明不是有效 ticker
+        if info and info.get("symbol") and info.get("shortName"):
+            result["matched"] = True
+            result["ticker"] = info["symbol"]
+            result["name"] = info.get("shortName", "")
+            result["exchange"] = info.get("exchange", "")
+            result["quote_type"] = info.get("quoteType", "")
+            result["source"] = "yf_info_verify"
+            result["candidates"] = [{
+                "symbol": info["symbol"],
+                "name": info.get("shortName", ""),
+                "exchange": info.get("exchange", ""),
+                "quote_type": info.get("quoteType", ""),
+            }]
+            return result
+    except Exception:
+        # yf.Ticker 初始化失败或 info 获取失败，不中断，继续下一步
+        pass
+
+    # ========== 步骤 3: yf.Search() 模糊搜索兜底 ==========
+    try:
+        s = yf.Search(query.strip())
+        quotes = s.quotes if s.quotes else []
+
+        if quotes:
+            # 过滤出 EQUITY 和 CRYPTOCURRENCY 类型，优先取第一条
+            preferred = [q for q in quotes if q.get("quoteType") in ("EQUITY", "CRYPTOCURRENCY")]
+            all_candidates = preferred + [q for q in quotes if q not in preferred]
+
+            for i, q in enumerate(all_candidates[:max_candidates]):
+                result["candidates"].append({
+                    "symbol": q.get("symbol", ""),
+                    "name": q.get("shortname") or q.get("longname", ""),
+                    "exchange": q.get("exchange", ""),
+                    "quote_type": q.get("quoteType", ""),
+                })
+
+            if all_candidates:
+                best = all_candidates[0]
+                result["matched"] = True
+                result["ticker"] = best.get("symbol", "")
+                result["name"] = best.get("shortname") or best.get("longname", "")
+                result["exchange"] = best.get("exchange", "")
+                result["quote_type"] = best.get("quoteType", "")
+                result["source"] = "yf_search"
+                return result
+    except Exception:
+        # yf.Search 失败，不中断，返回未匹配结果
+        pass
+
+    # 所有方法都失败，返回未匹配结果
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="市场数据获取工具 — 统一数据入口",
@@ -1073,8 +1208,13 @@ def main():
   # 自定义 ticker
   python get_market_data.py --market us_stocks --tickers AAPL,MSFT,GOOGL
 
-  # 列出可用批次
-  python get_market_data.py --list-batches
+  # 搜索 ticker（支持 vt_symbol、公司名、代称、加密货币名等）
+  python get_market_data.py --search-ticker "apple"
+  python get_market_data.py --search-ticker "265598.SMART" --output json
+  python get_market_data.py --search-ticker "bitcoin"
+
+  # --search-ticker 配合 product-all-info（自动填入 --ticker）
+  python get_market_data.py --search-ticker "apple" --fetch-url product-all-info --output json
         """,
     )
 
@@ -1094,14 +1234,45 @@ def main():
                         help=f"抓取数据: {', '.join(ICI_URLS.keys())}, all(全部ICI), product-all-info(单品种新闻+评级), 或 calendar(全局经济日历)")
     parser.add_argument("--ticker", type=str, default=None,
                         help="用于 --fetch-url product-all-info 的 ticker，如 AAPL")
+    parser.add_argument("--search-ticker", type=str, default=None, dest="search_ticker",
+                        help="综合搜索 yfinance ticker（支持 vt_symbol、公司名、代称、加密货币名等）")
 
     args = parser.parse_args()
+
+    # ========== --search_ticker 独立模式 ==========
+    # 此参数优先级最高：如果只传了 --search_ticker 且没有 --fetch-url，
+    # 则输出搜索结果并退出
+    if args.search_ticker and not args.fetch_url:
+        result = search_yfinance_ticker(args.search_ticker)
+        if args.output == "json":
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            if result["matched"]:
+                print(f"✅ 匹配成功: {result['ticker']} ({result['name']})")
+                print(f"   来源: {result['source']}, 类型: {result['quote_type']}, 交易所: {result['exchange']}")
+            else:
+                print(f"❌ 未匹配到 ticker: {result['query']}")
+            if result["candidates"]:
+                print(f"   候选列表 ({len(result['candidates'])} 条):")
+                for c in result["candidates"]:
+                    print(f"     {c['symbol']:10s} | {c['name']:35s} | {c['exchange']:6s} | {c['quote_type']}")
+        return
 
     # 抓取数据
     if args.fetch_url:
         if args.fetch_url == "product-all-info":
+            # --search_ticker 结果可以自动填入 --ticker（当 --ticker 未显式传入时）
+            if not args.ticker and args.search_ticker:
+                search_result = search_yfinance_ticker(args.search_ticker)
+                if search_result["matched"]:
+                    args.ticker = search_result["ticker"]
+                else:
+                    print(f"❌ --search_ticker '{args.search_ticker}' 未匹配到 ticker，且未传入 --ticker")
+                    if search_result["candidates"]:
+                        print(f"   候选: {', '.join(c['symbol'] for c in search_result['candidates'])}")
+                    sys.exit(1)
             if not args.ticker:
-                print("❌ --fetch-url product-all-info 需要 --ticker 参数")
+                print("❌ --fetch-url product-all-info 需要 --ticker 或 --search-ticker 参数")
                 sys.exit(1)
             data = fetch_product_all_info(args.ticker)
             if args.output == "json":
