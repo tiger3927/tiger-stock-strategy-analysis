@@ -635,6 +635,47 @@ def fetch_ratings(ticker):
         except (json.JSONDecodeError, AttributeError):
             continue
 
+    # 方法4: 从 HTML <dl> 描述列表提取（部分股票如 XOM 用 <dl> 而非 <table>）
+    # 定位 "Price Target and Rating" 区域
+    if "consensus_target" not in result or "consensus_rating" not in result:
+        m = re.search(r'Price Target and Rating</h2>(.*?)</dl>', html, re.DOTALL)
+        if m:
+            section = m.group(1)
+            # Average Price Target
+            tm = re.search(r'Average Price Target[^<]*</dt><dd[^>]*><strong>\$?([\d,.]+)', section)
+            if tm and "consensus_target" not in result:
+                result["consensus_target"] = float(tm.group(1).replace(",", ""))
+            # High Price Target
+            tm = re.search(r'High Price Target[^<]*</dt><dd[^>]*><strong>\$?([\d,.]+)', section)
+            if tm:
+                result["target_high"] = float(tm.group(1).replace(",", ""))
+            # Low Price Target
+            tm = re.search(r'Low Price Target[^<]*</dt><dd[^>]*><strong>\$?([\d,.]+)', section)
+            if tm:
+                result["target_low"] = float(tm.group(1).replace(",", ""))
+            # Consensus Rating
+            tm = re.search(r'Consensus Rating[^<]*</dt><dd[^>]*><strong>([^<]+)', section)
+            if tm and "consensus_rating" not in result:
+                result["consensus_rating"] = tm.group(1).strip()
+            # Rating Score
+            tm = re.search(r'Rating Score[^<]*</dt><dd[^>]*><strong>([\d.]+)', section)
+            if tm:
+                result["consensus_score"] = float(tm.group(1))
+            # Research Coverage (analyst count)
+            tm = re.search(r'Research Coverage[^<]*</dt><dd[^>]*><strong>(\d+)', section)
+            if tm and "analyst_count" not in result:
+                result["analyst_count"] = int(tm.group(1))
+
+    # 方法5: 从页面顶部摘要提取（兜底）
+    if "consensus_target" not in result:
+        m = re.search(r'Price Target</dt><dd><strong>\$?([\d,.]+)</strong></dd>', html)
+        if m:
+            result["consensus_target"] = float(m.group(1).replace(",", ""))
+    if "consensus_rating" not in result:
+        m = re.search(r'Consensus Rating</dt><dd><strong>([^<]+)</strong></dd>', html)
+        if m:
+            result["consensus_rating"] = m.group(1).strip()
+
     return result
 
 
@@ -786,6 +827,15 @@ def calc_atr(df, period=14):
     low = df["Low"].values
     close = df["Close"].values
 
+    # 过滤 NaN
+    mask = ~(np.isnan(high) | np.isnan(low) | np.isnan(close))
+    high = high[mask]
+    low = low[mask]
+    close = close[mask]
+
+    if len(high) < period + 1:
+        return 0.0
+
     tr = np.maximum(
         high[1:] - low[1:],
         np.maximum(
@@ -802,6 +852,15 @@ def calc_cci(df, period=14):
     high = df["High"].values
     low = df["Low"].values
     close = df["Close"].values
+
+    # 过滤 NaN
+    mask = ~(np.isnan(high) | np.isnan(low) | np.isnan(close))
+    high = high[mask]
+    low = low[mask]
+    close = close[mask]
+
+    if len(high) < period:
+        return 0.0
 
     tp = (high + low + close) / 3  # 典型价格
     sma = np.mean(tp[-period:])
@@ -821,6 +880,17 @@ def find_support_resistance(df, num_levels=3):
     close = df["Close"].values
     high = df["High"].values
     low = df["Low"].values
+
+    # 过滤 NaN，防止 np.histogram 报错
+    if np.isnan(high).all() or np.isnan(low).all():
+        return [], []
+
+    high = high[~np.isnan(high)]
+    low = low[~np.isnan(low)]
+    close = close[~np.isnan(close)]
+
+    if len(high) == 0 or len(low) == 0 or len(close) == 0:
+        return [], []
 
     current_price = close[-1]
 
@@ -873,6 +943,9 @@ def find_support_resistance(df, num_levels=3):
 def calc_price_percentile(df, period_days):
     """计算当前价格在指定周期内的分位"""
     close = df["Close"].values
+    close = close[~np.isnan(close)]
+    if len(close) < 2:
+        return 0.5
     current = close[-1]
     window = close[-period_days:] if len(close) >= period_days else close
     low, high = float(np.min(window)), float(np.max(window))
@@ -898,7 +971,12 @@ def fetch_technical_indicators(ticker):
     if df_1y.empty:
         df_1y = df_3mo
 
-    current_price = round(float(df_3mo["Close"].iloc[-1]), 2)
+    # 过滤 Close 列中的 NaN
+    close_vals = df_3mo["Close"].values
+    close_vals = close_vals[~np.isnan(close_vals)]
+    if len(close_vals) == 0:
+        return {"error": f"{ticker} 的 Close 数据全为 NaN"}
+    current_price = round(float(close_vals[-1]), 2)
 
     # 近 5 日（用于 24h 分位近似）
     df_5d = stock.history(period="5d")
@@ -908,7 +986,9 @@ def fetch_technical_indicators(ticker):
     # 计算均线
     def ma(df, period):
         if len(df) >= period:
-            return round(float(df["Close"].tail(period).mean()), 2)
+            vals = df["Close"].tail(period).dropna().values
+            if len(vals) > 0:
+                return round(float(vals.mean()), 2)
         return None
 
     ma_20 = ma(df_1y, 20)
@@ -917,7 +997,7 @@ def fetch_technical_indicators(ticker):
 
     # 成交量
     latest = df_1y.iloc[-1]
-    volume = int(latest["Volume"]) if not math.isnan(latest["Volume"]) else None
+    volume = int(latest["Volume"]) if not math.isnan(float(latest["Volume"])) else None
 
     # 计算各项指标
     atr = calc_atr(df_3mo)
