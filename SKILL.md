@@ -52,6 +52,19 @@ description: "股票量化策略分析工具：为 vnpy 量化软件提供策略
 | 9  | 策略本次持仓的历史交易记录    |
 | 10 | 市场环境、行业环境、事件风险   |
 
+
+### web_search 失效后的替代方法
+
+web_search 使用 Tavily 引擎，每月限额 1000 次，超出后 web_search 将不可用。
+
+替代方案（通过 web_fetch 依次尝试）：
+
+```
+1st: Startpage — Google 内核，无反爬，结果最全
+2nd: Brave   — 结果质量好，但有 429 限流
+3rd: Bing    — 稳定可靠，结果偏泛
+```
+
 ### 查询的信息存档
 
 路径规则 : \[工作区]/stock\_data/\[vt\_symbol]/
@@ -198,9 +211,12 @@ tiger-stock-strategy-analysis目录下应该有本SKILL.md，docs目录，script
 | 模块                             | 安装命令                                                | 用途                                   |
 | ------------------------------ | --------------------------------------------------- | ------------------------------------ |
 | `get_market_data.py`           | `pip install yfinance`                              | 获取结构化价格数据（含均线、52周百分位）                |
+| `get_market_data.py`           | `pip install requests beautifulsoup4 numpy`         | HTTP 请求、HTML 解析、数值计算（ATR/CCI/支撑压力位） |
 | `get_market_data.py`（calendar） | `pip install -U camoufox[geoip]` + `camoufox fetch` | 必须绕过 Cloudflare 获取 ForexFactory 经济日历 |
-| `stock_redis_query.py`         | `pip install redis`                                 | 查询 Redis 中的策略状态和账户信息                 |
-| `vnpy_command.py`              | `pip install redis`                                 | 读写 Redis 缓存（get / publish）           |
+| `stock_redis_query.py`         | `pip install requests`                              | 通过 Redis Proxy API 查询账户/策略信息          |
+| `vnpy_command.py`              | `pip install requests`                              | 通过 Redis Proxy API 发送命令（conid/close/publish 等） |
+| `test_get_market_data.py`      | `pip install pandas`                                | 测试脚本中构造模拟 DataFrame 数据                |
+| `tools.py`                     | （纯标准库，无需安装）                                       | JSON 文件读取工具函数                         |
 
 ***
 
