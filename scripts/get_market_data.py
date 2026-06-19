@@ -243,14 +243,30 @@ def get_ticker_data(ticker: str) -> dict:
         if hist.empty:
             return {"ticker": ticker, "error": "无数据", "as_of": datetime.datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
 
-        # 最新价格
+        # 最新价格（含非交易时段 fallback）
         latest = hist.iloc[-1]
         price = safe_float(latest["Close"])
+
+        # 非交易时段 fallback 链：Close 不可用 → info 前收盘 → 前日 Close
+        if price is None:
+            try:
+                info = stock.info
+                price = safe_float(info.get("regularMarketPreviousClose")) or \
+                        safe_float(info.get("previousClose"))
+            except Exception:
+                pass
+        if price is None and len(hist) >= 2:
+            price = safe_float(hist.iloc[-2]["Close"])
+
         prev_close = safe_float(hist.iloc[-2]["Close"]) if len(hist) >= 2 else None
 
-        # 涨跌幅
-        change = round(price - prev_close, 2) if price is not None and prev_close is not None else None
-        change_pct = round((price - prev_close) / prev_close * 100, 2) if price is not None and prev_close is not None and prev_close != 0 else None
+        # 涨跌幅（price 来自 fallback 时 change 为 0）
+        if price is not None and prev_close is not None:
+            change = round(price - prev_close, 2)
+            change_pct = round((price - prev_close) / prev_close * 100, 2) if prev_close != 0 else None
+        else:
+            change = None
+            change_pct = None
 
         # 均线
         def ma(period):
