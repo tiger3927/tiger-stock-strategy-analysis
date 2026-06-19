@@ -920,25 +920,31 @@ def fetch_web_indicators():
         "indicators": {},
     }
 
-    for key, query in queries.items():
-        t0 = time.time()
-        answer = _search_oriosearch(query)
-        t = time.time() - t0
-        result["time_s"] += t
+    # 并发发送所有请求（总耗时 ≈ 最慢的单个请求，而非 14 个之和）
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        if answer:
-            result["hit"] += 1
-            val = _extract_indicator_value(answer)
-        else:
-            val = "N/A"
+    with ThreadPoolExecutor(max_workers=len(queries)) as executor:
+        fut_map = {executor.submit(_search_oriosearch, q): k for k, q in queries.items()}
+        for fut in as_completed(fut_map):
+            key = fut_map[fut]
+            t0 = time.time()
+            answer = fut.result()
+            t = time.time() - t0
+            result["time_s"] += t
 
-        result["indicators"][key] = {
-            "query": query,
-            "answer": (answer or "")[:300],
-            "value": val,
-            "source": "oriosearch" if answer else "失败",
-            "time_s": round(t, 2),
-        }
+            if answer:
+                result["hit"] += 1
+                val = _extract_indicator_value(answer)
+            else:
+                val = "N/A"
+
+            result["indicators"][key] = {
+                "query": queries[key],
+                "answer": (answer or "")[:300],
+                "value": val,
+                "source": "oriosearch" if answer else "失败",
+                "time_s": round(t, 2),
+            }
 
     result["time_s"] = round(result["time_s"], 2)
     return result
@@ -957,7 +963,7 @@ def _search_oriosearch(query):
         "include_answer": True,
     }
     try:
-        r = requests.post(f"{ORIO_URL}/search", json=payload, timeout=(5, 60))
+        r = requests.post(f"{ORIO_URL}/search", json=payload, timeout=(5, 90))
         if r.status_code != 200:
             return None
         data = r.json()
@@ -974,7 +980,7 @@ def _search_oriosearch(query):
     # 降级重试：basic 深度
     payload["search_depth"] = "basic"
     try:
-        r = requests.post(f"{ORIO_URL}/search", json=payload, timeout=(5, 60))
+        r = requests.post(f"{ORIO_URL}/search", json=payload, timeout=(5, 30))
         if r.status_code != 200:
             return None
         data = r.json()
