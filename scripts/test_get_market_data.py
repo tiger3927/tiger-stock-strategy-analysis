@@ -11,6 +11,7 @@ get_market_data.py 功能测试脚本
   python scripts/test_get_market_data.py --technical   # 仅测试技术指标计算
   python scripts/test_get_market_data.py --ratings     # 仅测试评级获取
   python scripts/test_get_market_data.py --news        # 仅测试新闻获取
+  python scripts/test_get_market_data.py --web-indicators  # 仅测试 OrioSearch 市场指标
 """
 import sys
 import os
@@ -253,8 +254,10 @@ def test_format_text_output():
 def test_format_ici_output():
     """测试 format_ici_output ICI 文本格式化"""
     print("\n--- format_ici_output ---")
+    from datetime import datetime, timezone
+    fake_now = "2026-06-16T12:00:00Z"
     data = {
-        "fetched_at": "2026-06-16T12:00:00Z",
+        "fetched_at": fake_now,
         "tables": [
             {
                 "headers": ["Category", "Value"],
@@ -264,7 +267,7 @@ def test_format_ici_output():
     }
     output = gmd.format_ici_output(data, "ICI 测试")
     assert "ICI 测试" in output
-    assert "2026-06-16T12:00:00Z" in output
+    assert fake_now in output
     assert "Category" in output
     assert "Equity" in output
     report("正常数据", "PASS")
@@ -627,6 +630,79 @@ def test_fetch_economic_calendar():
         report("经济日历", "SKIP", f"需 camoufox 或网络异常: {str(e)[:80]}")
 
 
+def test_fetch_web_indicators():
+    """测试 OrioSearch 市场指标获取（网络请求）"""
+    print("\n--- fetch_web_indicators ---")
+    try:
+        result = gmd.fetch_web_indicators()
+        assert isinstance(result, dict), "应返回 dict"
+        assert result.get("source") == "oriosearch", f"source 应为 oriosearch，得到 {result.get('source')}"
+        assert result.get("total") == 14, f"total 应为 14，得到 {result.get('total')}"
+        assert "fetched_at" in result, "缺少 fetched_at"
+        assert "indicators" in result, "缺少 indicators"
+        assert isinstance(result["indicators"], dict), "indicators 应为 dict"
+
+        inds = result["indicators"]
+        hit = result.get("hit", 0)
+        # 验证每个指标的结构
+        for key in gmd.WEB_INDICATOR_QUERIES_TEMPLATE:
+            info = inds.get(key, {})
+            assert "query" in info, f"{key} 缺少 query"
+            assert "value" in info, f"{key} 缺少 value"
+            assert "source" in info, f"{key} 缺少 source"
+            assert "time_s" in info, f"{key} 缺少 time_s"
+
+        report(f"OrioSearch 市场指标: {hit}/{result['total']} 命中, 耗时 {result['time_s']}s", "PASS")
+        # 显示前 5 个指标
+        for i, (key, info) in enumerate(inds.items()):
+            if i >= 5:
+                break
+            print(f"    {key:<15} {info['source']:<12} {info['time_s']:<8.2f}s {info['value']}")
+    except AssertionError as e:
+        report("fetch_web_indicators", "FAIL", str(e))
+    except Exception as e:
+        report("fetch_web_indicators", "FAIL", str(e)[:100])
+
+
+def test_web_indicators_cli():
+    """测试 --fetch-url web-indicators CLI 入口（通过 subprocess）"""
+    print("\n--- --fetch-url web-indicators CLI ---")
+    import subprocess
+    script_path = os.path.join(os.path.dirname(__file__), "get_market_data.py")
+
+    # 测试 JSON 输出
+    try:
+        r = subprocess.run(
+            [sys.executable, script_path, "--fetch-url", "web-indicators", "--output", "json"],
+            capture_output=True, text=True, timeout=60,
+        )
+        if r.returncode == 0:
+            data = json.loads(r.stdout)
+            assert data.get("source") == "oriosearch", "source 应为 oriosearch"
+            assert data.get("total") == 14, f"total 应为 14，得到 {data.get('total')}"
+            assert "indicators" in data, "缺少 indicators"
+            report("--fetch-url web-indicators (JSON)", "PASS")
+        else:
+            report("--fetch-url web-indicators (JSON)", "FAIL", f"exit={r.returncode}, err={r.stderr[:100]}")
+    except json.JSONDecodeError:
+        report("--fetch-url web-indicators (JSON)", "FAIL", "非 JSON 输出")
+    except Exception as e:
+        report("--fetch-url web-indicators (JSON)", "FAIL", str(e)[:80])
+
+    # 测试 text 输出
+    try:
+        r = subprocess.run(
+            [sys.executable, script_path, "--fetch-url", "web-indicators"],
+            capture_output=True, text=True, timeout=60,
+        )
+        if r.returncode == 0 and "市场指标" in r.stdout:
+            report("--fetch-url web-indicators (text)", "PASS")
+        else:
+            report("--fetch-url web-indicators (text)", "FAIL", f"exit={r.returncode}")
+    except Exception as e:
+        report("--fetch-url web-indicators (text)", "FAIL", str(e)[:80])
+
+
 def test_get_ticker_data():
     """测试单个 ticker 数据获取（网络请求）"""
     print("\n--- get_ticker_data ---")
@@ -733,6 +809,8 @@ def run_all():
     test_fetch_batch()
     test_fetch_ici_table()
     test_fetch_economic_calendar()
+    test_fetch_web_indicators()
+    test_web_indicators_cli()
     test_main_cli()
     test_search_yfinance_ticker()
     test_search_ticker_cli()
@@ -797,5 +875,8 @@ if __name__ == "__main__":
         test_fetch_ratings()
     elif "--news" in args:
         test_fetch_news()
+    elif "--web-indicators" in args:
+        test_fetch_web_indicators()
+        test_web_indicators_cli()
     else:
         run_quick()

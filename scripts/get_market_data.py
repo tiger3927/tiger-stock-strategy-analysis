@@ -8,6 +8,7 @@
   4. 支持缓存写入 Redis（可选）
   5. --fetch-url product-all-info 获取单品种新闻+评级（替代 web_search）
   6. --fetch-url calendar 获取全局经济日历（每小时 1 次，所有策略共享）
+  7. --fetch-url web-indicators 获取 14 项市场指标（OrioSearch，替代 AI web_search）
 
 用法：
   python get_market_data.py --market us_stocks --batch us-major-indices
@@ -16,6 +17,7 @@
   python get_market_data.py --market us_stocks --batch us-major-indices --output json
   python get_market_data.py --fetch-url product-all-info --ticker AAPL --output json
   python get_market_data.py --fetch-url calendar --output json
+  python get_market_data.py --fetch-url web-indicators --output json
 
 市场参数：
   us_stocks     美股（默认）
@@ -365,6 +367,27 @@ ICI_URLS = {
         "url": "https://www.ici.org/research/stats/mmf",
         "desc": "ICI 货币基金 AUM（周度）",
     },
+}
+
+# OrioSearch 市场指标查询（替代 web_search）
+ORIO_URL = "https://search.my-gun.top"
+
+# 查询模板（日期在函数内动态计算）
+WEB_INDICATOR_QUERIES_TEMPLATE = {
+    "HY_OAS": "BofA high yield option adjusted spread current level {year}",
+    "MOVE": "MOVE index today value level",
+    "FearGreed": "CNN fear and greed index current value reading now",
+    "MarginDebt": "FINRA margin debt {year} latest month total billion",
+    "Buyback": "S&P 500 buyback {year} year to date volume Goldman Sachs",
+    "IPO": "US IPO {year} proceeds year to date",
+    "Secondary": "US follow-on secondary equity offering {year} total volume proceeds",
+    "FOMC": "Fed {month_name} {year} rate decision result hawkish or dovish summary statement",
+    "CPI": "US CPI {prev_month_name} {year} actual core MoM consensus expectation",
+    "FedWatch": "Fed funds rate probability {month_name} {year} CME",
+    "PutCallRatio": "CBOE equity put call ratio today level",
+    "Liquidity": "Fed RRP balance {month_name} {year}",
+    "Calendar": "US economic data releases calendar this week {today_str}",
+    "Earnings": "AAPL MSFT NVDA next quarterly earnings report date {year}",
 }
 
 
@@ -813,6 +836,177 @@ def fetch_economic_calendar():
     return results
 
 
+# ==================== OrioSearch 市场指标搜索（替代 web_search） ====================
+#
+# 功能：通过 OrioSearch 获取 14 项市场指标（替代 AI 的 web_search 调用）
+# 用法：--fetch-url web-indicators
+# 数据源：OrioSearch（https://search.my-gun.top）
+# 输出：结构化 JSON/text，含每项指标的 answer、关键数值、耗时
+# ============================================================
+
+
+def fetch_web_indicators():
+    """
+    通过 OrioSearch 获取全部 14 项市场指标。
+
+    查询词使用 WEB_INDICATOR_QUERIES_TEMPLATE 模板，
+    日期参数在调用时动态计算，避免硬编码。
+
+    Returns:
+        dict: {
+            "source": "oriosearch",
+            "fetched_at": "...",
+            "total": 14,
+            "hit": 13,
+            "time_s": 1.23,
+            "indicators": {
+                "HY_OAS": {"query":"...", "answer":"...", "value":"263 bps", "time_s":0.09},
+                ...
+            }
+        }
+    """
+    now = datetime.datetime.now(timezone.utc)
+    year = now.year
+    month = now.month
+    month_name = now.strftime("%B")
+    prev_month = month - 1 if month > 1 else 12
+    prev_month_name = datetime.datetime(year if month > 1 else year - 1, prev_month, 1).strftime("%B")
+    today_str = now.strftime("%B %d %Y")
+
+    # 渲染查询词
+    queries = {}
+    for key, tmpl in WEB_INDICATOR_QUERIES_TEMPLATE.items():
+        queries[key] = tmpl.format(year=year, month_name=month_name,
+                                    prev_month_name=prev_month_name, today_str=today_str)
+
+    result = {
+        "source": "oriosearch",
+        "fetched_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "total": len(queries),
+        "hit": 0,
+        "time_s": 0.0,
+        "indicators": {},
+    }
+
+    for key, query in queries.items():
+        t0 = time.time()
+        answer = _search_oriosearch(query)
+        t = time.time() - t0
+        result["time_s"] += t
+
+        if answer:
+            result["hit"] += 1
+            val = _extract_indicator_value(answer)
+        else:
+            val = "N/A"
+
+        result["indicators"][key] = {
+            "query": query,
+            "answer": (answer or "")[:300],
+            "value": val,
+            "source": "oriosearch" if answer else "失败",
+            "time_s": round(t, 2),
+        }
+
+    result["time_s"] = round(result["time_s"], 2)
+    return result
+
+
+def _search_oriosearch(query):
+    """OrioSearch 单次搜索，返回 answer（失败返回 None）
+
+    策略：先以 advanced 深度搜索（命中缓存时极快），
+    若超时则降级到 basic 重试（避免 IPO 等查询卡死）。
+    """
+    payload = {
+        "query": query,
+        "search_depth": "advanced",
+        "max_results": 5,
+        "include_answer": True,
+    }
+    try:
+        r = requests.post(f"{ORIO_URL}/search", json=payload, timeout=(5, 30))
+        if r.status_code != 200:
+            return None
+        data = r.json()
+        ans = data.get('answer', '') or ''
+        if ans.strip():
+            return ans.strip()
+        return None
+    except requests.ReadTimeout:
+        # advanced 超时 → 降级 basic 重试
+        pass
+    except Exception:
+        return None
+
+    # 降级重试：basic 深度
+    payload["search_depth"] = "basic"
+    try:
+        r = requests.post(f"{ORIO_URL}/search", json=payload, timeout=(5, 30))
+        if r.status_code != 200:
+            return None
+        data = r.json()
+        ans = data.get('answer', '') or ''
+        return ans.strip() if ans.strip() else None
+    except Exception:
+        return None
+
+
+def _extract_indicator_value(answer):
+    """从 answer 中提取关键数值（用于展示）"""
+    if not answer:
+        return "N/A"
+    # 匹配金额($X.XXT/B/M)、百分比(X.XX%)、bps、纯数字+单位
+    nums = re.findall(
+        r'[\$]?[\d,]+\.?\d*\s*(?:%|bps|trillion|billion|million|T|B|M)?',
+        answer[:400],
+    )
+
+    def is_junk(s):
+        s = s.strip().rstrip(",")
+        if not s or len(s) <= 2:
+            return True
+        if re.match(r'^\d{4}$', s):
+            return True
+        if s.endswith('.'):
+            return True
+        return False
+
+    cleaned = [n.strip().rstrip(",") for n in nums if not is_junk(n)]
+    cleaned = [n for n in cleaned if n]
+
+    # 去重（保持顺序）
+    seen = set()
+    unique = []
+    for n in cleaned:
+        if n not in seen:
+            seen.add(n)
+            unique.append(n)
+
+    if unique:
+        return ", ".join(unique[:5])
+    return answer[:150].replace("\n", " ").strip() + ("..." if len(answer) > 150 else "")
+
+
+def _format_web_indicators_text(data: dict) -> str:
+    """格式化市场指标结果为可读文本"""
+    lines = []
+    lines.append("=== 市场指标 (OrioSearch) ===")
+    lines.append("")
+    lines.append(f"  {'指标':<15} {'来源':<12} {'耗时':<8} {'关键数值'}")
+    lines.append(f"  {'-'*15} {'-'*12} {'-'*8} {'-'*35}")
+    inds = data.get("indicators", {})
+    for key in WEB_INDICATOR_QUERIES_TEMPLATE:
+        info = inds.get(key, {})
+        src = info.get("source", "?")
+        t = info.get("time_s", 0)
+        val = info.get("value", "N/A")
+        lines.append(f"  {key:<15} {src:<12} {t:<8.2f} {val}")
+    lines.append("")
+    lines.append(f"  命中: {data['hit']}/{data['total']} | 总耗时: {data['time_s']}s")
+    return "\n".join(lines)
+
+
 # ==================== 技术指标计算（替代 AI 推理步骤） ====================
 #
 # 功能：计算 ATR(14)、CCI(14)、三级支撑/压力位、风险收益比、价格分位
@@ -1230,8 +1424,8 @@ def main():
     parser.add_argument("--list-batches", action="store_true",
                         help="列出当前市场可用的预设批次")
     parser.add_argument("--fetch-url", type=str, default=None,
-                        choices=list(ICI_URLS.keys()) + ["all", "product-all-info", "calendar"],
-                        help=f"抓取数据: {', '.join(ICI_URLS.keys())}, all(全部ICI), product-all-info(单品种新闻+评级), 或 calendar(全局经济日历)")
+                        choices=list(ICI_URLS.keys()) + ["all", "product-all-info", "calendar", "web-indicators"],
+                        help=f"抓取数据: {', '.join(ICI_URLS.keys())}, all(全部ICI), product-all-info(单品种新闻+评级), calendar(全局经济日历), 或 web-indicators(OrioSearch市场指标)")
     parser.add_argument("--ticker", type=str, default=None,
                         help="用于 --fetch-url product-all-info 的 ticker，如 AAPL")
     parser.add_argument("--search-ticker", type=str, default=None, dest="search_ticker",
@@ -1312,6 +1506,14 @@ def main():
                     print(f"  做空风险收益比: {t.get('risk_reward_short', '?')}")
                     print(f"  近24h价格分位: {t.get('近24h价格分位', '?')}")
                     print(f"  近3月价格分位: {t.get('近3月价格分位', '?')}")
+            return
+
+        if args.fetch_url == "web-indicators":
+            data = fetch_web_indicators()
+            if args.output == "json":
+                print(json.dumps(data, ensure_ascii=False, indent=2))
+            else:
+                print(_format_web_indicators_text(data))
             return
 
         if args.fetch_url == "calendar":
