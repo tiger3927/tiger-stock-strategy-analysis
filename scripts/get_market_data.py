@@ -42,6 +42,7 @@ import urllib.error
 from datetime import timezone
 import math
 import re
+import html
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -526,9 +527,10 @@ def _fetch_url(url, headers=None, timeout=15, retries=2):
 
 
 def _clean_html(text):
-    """去除 HTML 标签，合并空白"""
+    """去除 HTML 标签，合并空白，解码 HTML 实体"""
     text = re.sub(r'<[^>]+>', '', text)
     text = re.sub(r'\s+', ' ', text)
+    text = html.unescape(text)
     return text.strip()
 
 
@@ -798,12 +800,22 @@ def fetch_economic_calendar():
             content, re.DOTALL
         )
 
+        last_date = ""
         for i in range(min(len(events), 50)):
+            raw_date = _clean_html(dates[i]) if i < len(dates) else ""
+            if raw_date:
+                last_date = raw_date
+            # impact 从 CSS class 中提取：icon--ff-impact-red/ora/yel
+            raw_impact = impacts[i] if i < len(impacts) else ""
+            impact_class = re.search(r'icon--ff-impact-(\w+)', raw_impact)
+            impact_map = {"red": "高", "ora": "中", "yel": "低"}
+            impact = impact_map.get(impact_class.group(1), "?") if impact_class else "?"
+
             results.append({
-                "date": _clean_html(dates[i]) if i < len(dates) else "?",
+                "date": last_date,
                 "currency": _clean_html(currencies[i]) if i < len(currencies) else "?",
                 "event": _clean_html(events[i]) if i < len(events) else "?",
-                "impact": _clean_html(impacts[i]) if i < len(impacts) else "?",
+                "impact": impact,
                 "actual": _clean_html(actuals[i]) if i < len(actuals) else "-",
                 "forecast": _clean_html(forecasts[i]) if i < len(forecasts) else "-",
                 "previous": _clean_html(previous[i]) if i < len(previous) else "-",
@@ -818,9 +830,13 @@ def fetch_economic_calendar():
             dates = re.findall(r'<td[^>]*class="[^"]*date[^"]*"[^>]*>(.*?)</td>', html, re.DOTALL)
             events = re.findall(r'<td[^>]*class="[^"]*event[^"]*"[^>]*>(.*?)</td>', html, re.DOTALL)
             currencies = re.findall(r'<td[^>]*class="[^"]*currency[^"]*"[^>]*>(.*?)</td>', html, re.DOTALL)
+            last_date = ""
             for i in range(min(len(events), 50)):
+                raw_date = _clean_html(dates[i]) if i < len(dates) else ""
+                if raw_date:
+                    last_date = raw_date
                 results.append({
-                    "date": _clean_html(dates[i]) if i < len(dates) else "?",
+                    "date": last_date,
                     "currency": _clean_html(currencies[i]) if i < len(currencies) else "?",
                     "event": _clean_html(events[i]) if i < len(events) else "?",
                     "source": "forexfactory"
