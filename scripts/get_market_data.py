@@ -957,7 +957,7 @@ def _search_oriosearch(query):
         "include_answer": True,
     }
     try:
-        r = requests.post(f"{ORIO_URL}/search", json=payload, timeout=(5, 30))
+        r = requests.post(f"{ORIO_URL}/search", json=payload, timeout=(5, 60))
         if r.status_code != 200:
             return None
         data = r.json()
@@ -974,7 +974,7 @@ def _search_oriosearch(query):
     # 降级重试：basic 深度
     payload["search_depth"] = "basic"
     try:
-        r = requests.post(f"{ORIO_URL}/search", json=payload, timeout=(5, 30))
+        r = requests.post(f"{ORIO_URL}/search", json=payload, timeout=(5, 60))
         if r.status_code != 200:
             return None
         data = r.json()
