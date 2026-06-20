@@ -951,10 +951,13 @@ def fetch_web_indicators():
 
 
 def _search_oriosearch(query):
-    """OrioSearch 单次搜索，返回 answer（失败返回 None）
+    """OrioSearch 单次搜索，返回答案文本（失败返回 None）
 
-    策略：先以 advanced 深度搜索（命中缓存时极快），
-    若超时则降级到 basic 重试（避免 IPO 等查询卡死）。
+    策略：
+      1. 优先取 answer 字段（有 AI 摘要时最快）
+      2. answer 为 None 时，从 results 列表中提取前 3 条的 title+content
+         作为推算文本，这样即使 OrioSearch 不生成 AI 摘要也能拿到有用数据
+      3. advanced 超时 → 降级 basic 重试
     """
     payload = {
         "query": query,
@@ -962,32 +965,48 @@ def _search_oriosearch(query):
         "max_results": 5,
         "include_answer": True,
     }
-    try:
-        r = requests.post(f"{ORIO_URL}/search", json=payload, timeout=(5, 90))
-        if r.status_code != 200:
-            return None
-        data = r.json()
-        ans = data.get('answer', '') or ''
-        if ans.strip():
-            return ans.strip()
-        return None
-    except requests.ReadTimeout:
-        # advanced 超时 → 降级 basic 重试
-        pass
-    except Exception:
-        return None
 
-    # 降级重试：basic 深度
-    payload["search_depth"] = "basic"
-    try:
-        r = requests.post(f"{ORIO_URL}/search", json=payload, timeout=(5, 30))
-        if r.status_code != 200:
+    def _try_request(payload_copy):
+        try:
+            r = requests.post(f"{ORIO_URL}/search", json=payload_copy, timeout=(5, 90))
+            if r.status_code != 200:
+                return None
+            data = r.json()
+            # 优先 answer
+            ans = data.get('answer', '') or ''
+            if ans.strip():
+                return ans.strip()
+            # answer 为 None/空 → 从 results 提取全部内容
+            results = data.get('results', [])
+            if results:
+                fragments = []
+                for i, res in enumerate(results[:5]):  # 取前5条够用且不乱
+                    title = res.get('title', '').strip()
+                    content = res.get('content', '').strip() or ''
+                    # content 是 Meta Description（短摘要）而非 raw_content（全文）
+                    # 所以截取 500 字符是安全的
+                    snippet = content[:500].strip() if content else ''
+                    if title:
+                        if snippet:
+                            fragments.append(f"{title}: {snippet}")
+                        else:
+                            fragments.append(title)
+                if fragments:
+                    return "\n".join(fragments)
             return None
-        data = r.json()
-        ans = data.get('answer', '') or ''
-        return ans.strip() if ans.strip() else None
-    except Exception:
-        return None
+        except requests.ReadTimeout:
+            return "__TIMEOUT__"
+        except Exception:
+            return None
+
+    # 先 advanced
+    result = _try_request(payload)
+    if result == "__TIMEOUT__":
+        # advanced 超时 → 降级 basic 重试
+        payload["search_depth"] = "basic"
+        result = _try_request(payload)
+    # __TIMEOUT__ 视为失败
+    return result if result != "__TIMEOUT__" else None
 
 
 def _extract_indicator_value(answer):
