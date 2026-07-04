@@ -38,7 +38,7 @@
 - 港股：`python scripts/vnpy_command.py get - /vnpy:港股:大盘与板块和资金流向分析`
 
 **2.  每次分析前，必须获取个股信息（新闻+评级+技术指标：ATR/CCI/支撑压力/均线/成交量/风险收益比/价格分位）**
-必须从[股票品种表](../../scripts/vt_symbol_info.json) 查找 vt_symbol 对应的 yahoo ticker，例如 `265598.SMART → AAPL`
+如果没有yahoo ticker， 必须从[股票品种表](../../scripts/vt_symbol_info.json) ，或者其他方法，查找 vt_symbol 对应的 yahoo ticker，例如 `265598.SMART → AAPL`
 ```bash
 python scripts/get_market_data.py --fetch-url product-all-info --ticker {yahoo_ticker} --output json
 ```

@@ -160,16 +160,31 @@ def format_conid_result(data: dict) -> str:
     if not data:
         return "查询超时或无结果"
 
+    mode = data.get("mode", "forward")
+    is_reverse = mode == "reverse"
+    symbol = data.get("symbol", "")
+    conid = data.get("conid", "")
+
     if data.get("success"):
-        lines = [
-            f"✅ {data['symbol']}  ConID 查询成功",
-            "=" * 55,
-            f"  合约 ID (conId):     {data['conid']}",
-            f"  符号 (symbol):       {data['symbol']}",
+        if is_reverse:
+            lines = [
+                f"✅ {conid}  合约反查成功",
+                "=" * 55,
+                f"  合约 ID (conId):     {conid}",
+                f"  股票代码 (symbol):   {symbol}",
+            ]
+        else:
+            lines = [
+                f"✅ {symbol}  ConID 查询成功",
+                "=" * 55,
+                f"  合约 ID (conId):     {conid}",
+                f"  符号 (symbol):       {symbol}",
+            ]
+        lines.extend([
             f"  交易所 (exchange):   {data['exchange']}",
             f"  货币 (currency):     {data['currency']}",
             f"  证券类型 (secType):  {data['secType']}",
-        ]
+        ])
         primary = data.get("primaryExchange", "")
         if primary:
             lines.append(f"  主交易所:            {primary}")
@@ -177,11 +192,18 @@ def format_conid_result(data: dict) -> str:
         lines.append("=" * 55)
         return "\n".join(lines)
     else:
-        return (
-            f"❌ {data.get('symbol', '')}  ConID 查询失败\n"
-            f"  错误: {data.get('error', '未知错误')}\n"
-            f"  时间: {data.get('timestamp', '')}"
-        )
+        if is_reverse:
+            return (
+                f"❌ {data.get('conid', '')}  合约反查失败\n"
+                f"  错误: {data.get('error', '未知错误')}\n"
+                f"  时间: {data.get('timestamp', '')}"
+            )
+        else:
+            return (
+                f"❌ {data.get('symbol', '')}  ConID 查询失败\n"
+                f"  错误: {data.get('error', '未知错误')}\n"
+                f"  时间: {data.get('timestamp', '')}"
+            )
 
 
 def format_command_result(data: dict) -> str:
@@ -226,8 +248,23 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''
 示例:
-  # ConID 查询
+  # ConID 查询（美股）
   python vnpy_command.py --token tiger-code-123456 conid tiger-code AAPL --wait
+  
+  # ConID 查询（港股）
+  python vnpy_command.py --token tiger-code-123456 conid tiger-code 700 --exchange SEHK --currency HKD --wait
+  
+  # ConID 查询（日股）
+  python vnpy_command.py --token tiger-code-123456 conid tiger-code 7203 --exchange TSEJ --currency JPY --wait
+  
+  # ConID 查询（韩股）
+  python vnpy_command.py --token tiger-code-123456 conid tiger-code 005930 --exchange KRX --currency KRW --wait
+  
+  # ConID 查询（台股）
+  python vnpy_command.py --token tiger-code-123456 conid tiger-code 2330 --exchange TWSE --currency TWD --wait
+  
+  # 反向查询（从 conid 查 ticker，支持任意市场）
+  python vnpy_command.py --token tiger-code-123456 conid tiger-code 265598 --reverse --wait
   
   # 策略操作
   python vnpy_command.py --token tiger-code-123456 close tiger-code MARTIN-AMD --comment "平仓"
@@ -251,7 +288,13 @@ def main():
     # --- conid ---
     conid_parser = subparsers.add_parser('conid', help='查询股票合约的 IB ConID')
     conid_parser.add_argument('username', help='用户名')
-    conid_parser.add_argument('symbol', help='股票代码，如 AAPL')
+    conid_parser.add_argument('symbol', help='股票代码（正向）或 conid（反向），如 AAPL 或 265598')
+    conid_parser.add_argument('--reverse', '-r', action='store_true',
+                              help='反向查询：从 conid 查 ticker')
+    conid_parser.add_argument('--exchange', default='SMART',
+                              help='交易所代码，默认 SMART（美股），港股 SEHK，日股 TSEJ，韩股 KRX，台股 TWSE')
+    conid_parser.add_argument('--currency', default='USD',
+                              help='货币代码，默认 USD，港股 HKD，日股 JPY，韩股 KRW，台股 TWD')
     conid_parser.add_argument('--wait', nargs='?', const=30, type=int, default=0,
                               help='等待结果，可选指定超时秒数（默认 30）')
 
@@ -326,16 +369,26 @@ def main():
 
     if args.command == 'conid':
         symbol = args.symbol.upper().strip()
+        mode = "reverse" if args.reverse else "forward"
+        exchange = args.exchange.upper().strip()
+        currency = args.currency.upper().strip()
 
         # 自动生成 response_key
         if not response_key and wait > 0:
             short_uuid = uuid.uuid4().hex[:8]
-            response_key = f"vnpy:{username}:conid_result:{symbol}_{short_uuid}"
+            mode_label = "reverse" if args.reverse else "conid"
+            response_key = f"vnpy:{username}:{mode_label}_result:{symbol}_{short_uuid}"
 
         if response_key:
             print(f"响应 Key: {response_key}")
 
-        command = {"type": "query_conid", "symbol": symbol}
+        command = {
+            "type": "query_conid",
+            "symbol": symbol,
+            "mode": mode,
+            "exchange": exchange,
+            "currency": currency,
+        }
         if response_key:
             command["response_key"] = response_key
 

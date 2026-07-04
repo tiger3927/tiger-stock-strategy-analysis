@@ -43,13 +43,27 @@ from datetime import timezone
 import math
 import re
 import html
+import hashlib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import yfinance as yf
 import requests
+from requests_cache import CachedSession
 from bs4 import BeautifulSoup
 import numpy as np
+import random
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+
+# ==================== 全局常量 ====================
+
+# requests_cache 持久缓存路径（固定到脚本所在目录）
+_CACHE_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "yf_cache_db")
+
+# yfinance info 数据文件缓存（info 无内置缓存，用文件缓存避免重复请求）
+_INFO_CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".yf_info_cache")
+_INFO_CACHE_TTL = 12 * 3600  # 12 小时
 
 
 # ==================== 预设批次 ====================
@@ -230,97 +244,184 @@ def calc_52w_percentile(current, low_52w, high_52w):
     return round((current - low) / (high - low) * 100, 1)
 
 
-def get_ticker_data(ticker: str) -> dict:
+def _get_info_cached(ticker: str) -> dict:
+    """带文件缓存的 yfinance info 获取，避免每次实时请求 Yahoo"""
+    os.makedirs(_INFO_CACHE_DIR, exist_ok=True)
+    cache_key = hashlib.md5(ticker.upper().encode()).hexdigest()
+    cache_path = os.path.join(_INFO_CACHE_DIR, f"{cache_key}.json")
+
+    # 缓存命中且未过期
+    if os.path.exists(cache_path):
+        mtime = os.path.getmtime(cache_path)
+        if time.time() - mtime < _INFO_CACHE_TTL:
+            try:
+                with open(cache_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass  # 缓存损坏，重新获取
+
+    # 实时获取
+    stock = yf.Ticker(ticker)
+    try:
+        info = stock.info
+    except Exception:
+        info = {}
+
+    # 写入缓存（仅写入非空结果）
+    if info:
+        try:
+            with open(cache_path, "w", encoding="utf-8") as f:
+                json.dump(info, f, ensure_ascii=False)
+        except Exception:
+            pass
+    return info
+
+
+def get_ticker_data(ticker: str, session: CachedSession = None) -> dict:
     """
     获取单个 ticker 的完整数据
 
+    Args:
+        ticker: 股票代码
+        session: requests_cache CachedSession（可选），传入后自动缓存 12 小时
+
     Returns:
         dict: {ticker, name, price, change, change_pct, ma_20, ma_50, ma_200,
-               high_52w, low_52w, pct_52w, volume, as_of}
+               high_52w, low_52w, pct_52w, volume, avg_volume, market_cap,
+               shares_outstanding, pe_ratio, pb_ratio, roe, revenue_growth,
+               sector, industry, as_of}
     """
-    try:
-        stock = yf.Ticker(ticker)
-        hist = stock.history(period="1y")
-        if hist.empty:
-            return {"ticker": ticker, "error": "无数据", "as_of": datetime.datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            stock = yf.Ticker(ticker)
+            hist = stock.history(period="1y")
+            if hist.empty:
+                if attempt < max_retries - 1:
+                    wait = (2 ** attempt) + random.uniform(0, 1)
+                    time.sleep(wait)
+                    continue
+                return {"ticker": ticker, "error": "无数据", "as_of": datetime.datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
 
-        # 最新价格（含非交易时段 fallback）
-        latest = hist.iloc[-1]
-        price = safe_float(latest["Close"])
+            # 统一获取 info（带文件缓存，避免重复请求）
+            info = _get_info_cached(ticker)
 
-        # 非交易时段 fallback 链：Close 不可用 → info 前收盘 → 前日 Close
-        if price is None:
-            try:
-                info = stock.info
+            # 最新价格（含非交易时段 fallback）
+            latest = hist.iloc[-1]
+            price = safe_float(latest["Close"])
+
+            # 非交易时段 fallback 链：Close 不可用 → info 前收盘 → 前日 Close
+            if price is None:
                 price = safe_float(info.get("regularMarketPreviousClose")) or \
                         safe_float(info.get("previousClose"))
-            except Exception:
-                pass
-        if price is None and len(hist) >= 2:
-            price = safe_float(hist.iloc[-2]["Close"])
+            if price is None and len(hist) >= 2:
+                price = safe_float(hist.iloc[-2]["Close"])
 
-        prev_close = safe_float(hist.iloc[-2]["Close"]) if len(hist) >= 2 else None
+            prev_close = safe_float(hist.iloc[-2]["Close"]) if len(hist) >= 2 else None
 
-        # 涨跌幅（price 来自 fallback 时 change 为 0）
-        if price is not None and prev_close is not None:
-            change = round(price - prev_close, 2)
-            change_pct = round((price - prev_close) / prev_close * 100, 2) if prev_close != 0 else None
-        else:
-            change = None
-            change_pct = None
+            # 涨跌幅（price 来自 fallback 时 change 为 0）
+            if price is not None and prev_close is not None:
+                change = round(price - prev_close, 2)
+                change_pct = round((price - prev_close) / prev_close * 100, 2) if prev_close != 0 else None
+            else:
+                change = None
+                change_pct = None
 
-        # 均线
-        def ma(period):
-            if len(hist) >= period:
-                return safe_float(hist["Close"].tail(period).mean())
-            return None
+            # 均线
+            def ma(period):
+                if len(hist) >= period:
+                    return safe_float(hist["Close"].tail(period).mean())
+                return None
 
-        ma_20 = ma(20)
-        ma_50 = ma(50)
-        ma_200 = ma(200)
+            ma_20 = ma(20)
+            ma_50 = ma(50)
+            ma_200 = ma(200)
 
-        # 52 周高低
-        high_52w = safe_float(hist["High"].max())
-        low_52w = safe_float(hist["Low"].min())
-        pct_52w = calc_52w_percentile(price, low_52w, high_52w)
+            # 52 周高低
+            high_52w = safe_float(hist["High"].max())
+            low_52w = safe_float(hist["Low"].min())
+            pct_52w = calc_52w_percentile(price, low_52w, high_52w)
 
-        # 成交量
-        volume = int(latest["Volume"]) if not math.isnan(latest["Volume"]) else None
+            # 成交量
+            volume = int(latest["Volume"]) if not math.isnan(latest["Volume"]) else None
 
-        # 名称
-        try:
-            info = stock.info
+            # 20日均成交量
+            avg_volume = int(hist["Volume"].tail(20).mean()) if len(hist) >= 20 else None
+
+            # 名称
             name = info.get("shortName") or info.get("longName") or ticker
-        except Exception:
-            name = ticker
 
-        return {
-            "ticker": ticker,
-            "name": name,
-            "price": price,
-            "change": change,
-            "change_pct": change_pct,
-            "ma_20": ma_20,
-            "ma_50": ma_50,
-            "ma_200": ma_200,
-            "high_52w": high_52w,
-            "low_52w": low_52w,
-            "pct_52w": pct_52w,
-            "volume": volume,
-            "as_of": datetime.datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        }
-    except Exception as e:
-        return {"ticker": ticker, "error": str(e), "as_of": datetime.datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+            # 基本面数据（从 info 提取，安全兜底）
+            market_cap = safe_float(info.get("marketCap"))
+            shares_outstanding = safe_float(info.get("sharesOutstanding"))
+            pe_ratio = safe_float(info.get("trailingPE"))
+            pb_ratio = safe_float(info.get("priceToBook"))
+            roe = safe_float(info.get("returnOnEquity"))
+            revenue_growth = safe_float(info.get("revenueGrowth"))
+            sector = info.get("sector")
+            industry = info.get("industry")
+
+            return {
+                "ticker": ticker,
+                "name": name,
+                "price": price,
+                "change": change,
+                "change_pct": change_pct,
+                "ma_20": ma_20,
+                "ma_50": ma_50,
+                "ma_200": ma_200,
+                "high_52w": high_52w,
+                "low_52w": low_52w,
+                "pct_52w": pct_52w,
+                "volume": volume,
+                "avg_volume": avg_volume,
+                "market_cap": market_cap,
+                "shares_outstanding": shares_outstanding,
+                "pe_ratio": pe_ratio,
+                "pb_ratio": pb_ratio,
+                "roe": roe,
+                "revenue_growth": revenue_growth,
+                "sector": sector,
+                "industry": industry,
+                "as_of": datetime.datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            }
+        except Exception as e:
+            # 遇到 429 限流时指数退避重试
+            if "429" in str(e) and attempt < max_retries - 1:
+                wait = (2 ** attempt) * 5 + random.uniform(0, 2)
+                time.sleep(wait)
+                continue
+            if attempt == max_retries - 1:
+                return {"ticker": ticker, "error": str(e), "as_of": datetime.datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+            wait = (2 ** attempt) + random.uniform(0, 1)
+            time.sleep(wait)
+
+
+def _fetch_single(ticker, labels=None):
+    """线程池包装器：获取单个 ticker 数据并附加 label"""
+    data = get_ticker_data(ticker)
+    if labels and ticker in labels:
+        data["label"] = labels[ticker]
+    return data
 
 
 def fetch_batch(tickers: list, labels: dict = None) -> list:
-    """批量获取 ticker 数据"""
+    """
+    批量获取 ticker 数据（带线程池 + 随机延迟）
+
+    3 并发线程 + 0.5-1.5s 随机间隔，降低 yfinance 限流概率。
+    info 数据通过 _get_info_cached 文件缓存（12 小时 TTL）。
+    """
+    if not tickers:
+        return []
+
     results = []
-    for t in tickers:
-        data = get_ticker_data(t)
-        if labels and t in labels:
-            data["label"] = labels[t]
-        results.append(data)
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = {executor.submit(_fetch_single, t, labels): t for t in tickers}
+        for future in as_completed(futures):
+            data = future.result()
+            results.append(data)
+            time.sleep(random.uniform(0.5, 1.5))
     return results
 
 
