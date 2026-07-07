@@ -1025,10 +1025,13 @@ def fetch_web_indicators():
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     with ThreadPoolExecutor(max_workers=len(queries)) as executor:
-        fut_map = {executor.submit(_search_oriosearch, q): k for k, q in queries.items()}
-        for fut in as_completed(fut_map):
-            key = fut_map[fut]
+        fut_map = {}
+        for k, q in queries.items():
             t0 = time.time()
+            fut = executor.submit(_search_oriosearch, q)
+            fut_map[fut] = (k, t0)
+        for fut in as_completed(fut_map):
+            key, t0 = fut_map[fut]
             answer = fut.result()
             t = time.time() - t0
             result["time_s"] += t
