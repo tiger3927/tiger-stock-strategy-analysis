@@ -342,7 +342,10 @@ def main():
     publish_parser = subparsers.add_parser('publish', help='向 Redis 写入/发布信息（SET）')
     publish_parser.add_argument('username', help='用户名')
     publish_parser.add_argument('key_path', help='key 路径后缀，完整 key 为 vnpy:{username}:{key_path}')
-    publish_parser.add_argument('value', help='要写入的值（纯文本或 JSON 字符串）')
+    publish_parser.add_argument('value', nargs='?', default=None,
+                                help='要写入的值（纯文本或 JSON 字符串）。内容较长时建议用 --file 替代')
+    publish_parser.add_argument('--file', default=None,
+                                help='从文件读取值（替代 value 位置参数），适合几千字以上的长内容')
     publish_parser.add_argument('--expire', type=int, default=None,
                                 help='过期时间（秒），不设置则永不过期')
 
@@ -403,16 +406,35 @@ def main():
             print(f"\n命令已发送，结果将写入: {response_key}")
 
     elif args.command == 'publish':
+        # 确定值来源：--file 优先，其次 value 位置参数
+        if args.file:
+            file_path = os.path.abspath(args.file)
+            if not os.path.exists(file_path):
+                print(f"❌ 文件不存在: {file_path}")
+                sys.exit(1)
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    value = f.read()
+            except Exception as e:
+                print(f"❌ 读取文件失败: {e}")
+                sys.exit(1)
+            print(f"  来源: 文件 {file_path} ({len(value)} 字符)")
+        elif args.value is not None:
+            value = args.value
+        else:
+            print("❌ 请提供 value 参数或 --file 参数")
+            sys.exit(1)
+
         if args.key_path.startswith('/'):
             key = args.key_path[1:]
         else:
             key = f"vnpy:{username}:{args.key_path}"
         print(f"发布信息:")
         print(f"  Key:   {key}")
-        print(f"  Value: {args.value}")
+        print(f"  Value: {value[:200]}{'...' if len(value) > 200 else ''}")
         if args.expire:
             print(f"  过期:  {args.expire} 秒")
-        result = client.set_value(key, args.value, expire_seconds=args.expire)
+        result = client.set_value(key, value, expire_seconds=args.expire)
         if result and result.get('success'):
             print(f"  结果: ✅ 发布成功")
         else:

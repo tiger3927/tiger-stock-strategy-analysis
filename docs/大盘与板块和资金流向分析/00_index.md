@@ -62,13 +62,26 @@ python scripts/get_market_data.py --market crypto --batch crypto-all --output js
 
 分析完成后，将 JSON 结果写入 Redis 缓存。从下方「市场子模块」表格的「缓存 key」列取出当前市场的完整 key，执行保存。例如美股：
 
-```bash
-python scripts/vnpy_command.py --token TOKEN publish 用户名 '/vnpy:美股:大盘与板块和资金流向分析' '{json结果}' --expire 43200
+临时文件统一存放在 `tests\tmp\` 目录下，发布后**必须删除**，避免残留过多：
+
+```powershell
+# 1. 将 JSON 结果写入临时文件
+@'
+{json结果}
+'@ | Set-Content tests\tmp\market_analysis_result.json -Encoding utf8
+
+# 2. 发布到 Redis
+python scripts/vnpy_command.py --token TOKEN publish 用户名 '/vnpy:美股:大盘与板块和资金流向分析' --file tests\tmp\market_analysis_result.json --expire 43200
+
+# 3. 清理临时文件
+Remove-Item tests\tmp\market_analysis_result.json
 ```
 
 - **替换规则**：将命令中的 `/vnpy:美股:大盘与板块和资金流向分析` 替换为表格中对应市场的完整 key
 - `--expire 43200` = 12 小时过期，与缓存时效一致
 - **⚠️ key path 必须严格使用下方表格中定义的完整 key，不得自定义 key 格式或路径。存错位置会导致缓存检查失效，定时任务反复重跑。**
+- 使用 `--file` 从临时文件读取内容，避免命令行长度限制；发布完成后**必须删除临时文件**
+- **注意**：如果中途中断（如 Ctrl+C），请手动执行 `Remove-Item tests\tmp\market_analysis_result.json` 清理残留文件
 
 ### 第 6 步：返回结果
 

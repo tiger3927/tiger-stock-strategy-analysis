@@ -511,23 +511,34 @@ web_search "{ticker} insider buying selling 2026"
 
 按【六、输出模板】生成结构化 JSON 结果。
 
-> **⚠️ 禁止保存 JSON 文件到磁盘**：生成的 JSON 结果**只返回给用户 + 发布到 Redis**，不得写入任何本地文件（包括 `.json`、`.txt`、`.md` 等格式）。如果 AI 有自动保存中间结果的习惯，请在此步骤关闭。
+> **⚠️ 禁止保存 JSON 文件到磁盘**：生成的 JSON 结果**只返回给用户 + 发布到 Redis**，不得在本地保留任何中间结果文件。如果 AI 有自动保存中间结果的习惯，请在此步骤关闭。
 
 ### Step 10：保存结果到缓存
 
-将生成的 JSON 结果写入 Redis 缓存：
+将生成的 JSON 结果写入 Redis 缓存。由于选股结果内容较大（可能几千字），**必须使用 `--file` 参数**从临时文件读取，避免命令行长度限制。
 
-```bash
-# 做多方向
-python scripts/vnpy_command.py --token TOKEN publish 用户名 /vnpy:美股:做多选股分析结果 '{json结果}' --expire 43200
+临时文件统一存放在 `tests\tmp\` 目录下，发布后**必须删除**，避免残留过多：
 
-# 做空方向
-python scripts/vnpy_command.py --token TOKEN publish 用户名 /vnpy:美股:做空选股分析结果 '{json结果}' --expire 43200
+```powershell
+# 1. 将 JSON 结果写入临时文件
+@'
+{json结果}
+'@ | Set-Content tests\tmp\stock_pick_result.json -Encoding utf8
+
+# 2. 发布到 Redis（做多方向）
+python scripts/vnpy_command.py --token TOKEN publish 用户名 /vnpy:美股:做多选股分析结果 --file tests\tmp\stock_pick_result.json --expire 43200
+
+# 3. 清理临时文件
+Remove-Item tests\tmp\stock_pick_result.json
 ```
+
+做空方向同理，替换 key 为 `/vnpy:美股:做空选股分析结果`。
 
 - `--expire 43200` = 12 小时过期，与缓存时效一致
 - key 以 `/` 开头表示公共数据，不归属任何用户
 - 根据 `direction` 选择对应的缓存 key
+- 发布完成后**必须删除临时文件**，遵守"不保留中间结果"原则
+- **注意**：如果中途中断（如 Ctrl+C），请手动执行 `Remove-Item tests\tmp\stock_pick_result.json` 清理残留文件
 
 ---
 
