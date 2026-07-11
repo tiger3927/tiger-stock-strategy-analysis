@@ -58,8 +58,8 @@ python scripts/vnpy_command.py get - "/vnpy:美股:做空选股分析结果"
 ```
 
 - 根据 `direction` 选择对应的缓存 key
-- 如果缓存存在 **且** 距今 **≤ 12 小时** → **直接完整返回缓存 JSON，本模块执行结束。禁止重新分析。**
-- 如果缓存不存在 **或** 距今 **> 12 小时** → 继续 Step 1
+- 如果缓存存在 **且** 距今 **≤ 24 小时** → **直接完整返回缓存 JSON，本模块执行结束。禁止重新分析。**
+- 如果缓存不存在 **或** 距今 **> 24 小时** → 继续 Step 1
 
 > 缓存 key 以 `/` 开头表示公共数据，不归属任何用户。
 
@@ -526,7 +526,7 @@ web_search "{ticker} insider buying selling 2026"
 '@ | Set-Content tests\tmp\stock_pick_result.json -Encoding utf8
 
 # 2. 发布到 Redis（做多方向）
-python scripts/vnpy_command.py --token TOKEN publish 用户名 /vnpy:美股:做多选股分析结果 --file tests\tmp\stock_pick_result.json --expire 43200
+python scripts/vnpy_command.py --token TOKEN publish 用户名 /vnpy:美股:做多选股分析结果 --file tests\tmp\stock_pick_result.json --expire 86400
 
 # 3. 清理临时文件
 Remove-Item tests\tmp\stock_pick_result.json
@@ -534,7 +534,7 @@ Remove-Item tests\tmp\stock_pick_result.json
 
 做空方向同理，替换 key 为 `/vnpy:美股:做空选股分析结果`。
 
-- `--expire 43200` = 12 小时过期，与缓存时效一致
+- `--expire 86400` = 24 小时过期，与缓存时效一致
 - key 以 `/` 开头表示公共数据，不归属任何用户
 - 根据 `direction` 选择对应的缓存 key
 - 发布完成后**必须删除临时文件**，遵守"不保留中间结果"原则
