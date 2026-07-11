@@ -492,20 +492,20 @@ ORIO_URL = "https://search.my-gun.top"
 
 # 查询模板（日期在函数内动态计算）
 WEB_INDICATOR_QUERIES_TEMPLATE = {
-    "HY_OAS": "BofA high yield option adjusted spread current level {year}",
+    "HY_OAS": "high yield OAS FRED current level basis points",
     "MOVE": "MOVE index today value level",
-    "FearGreed": "CNN fear and greed index current value reading now",
-    "MarginDebt": "FINRA margin debt {year} latest month total billion",
+    "FearGreed": "CNN Business fear greed index today",
+    "MarginDebt": "FINRA margin debt statistics {year} latest",
     "Buyback": "S&P 500 buyback {year} year to date volume Goldman Sachs",
-    "IPO": "US IPO {year} proceeds year to date",
-    "Secondary": "US follow-on secondary equity offering {year} total volume proceeds",
+    "IPO": "US IPO activity {year} total raised year to date",
+    "Secondary": "US equity secondary offering {year} year to date",
     "FOMC": "Fed {month_name} {year} rate decision result hawkish or dovish summary statement",
-    "CPI": "US CPI {prev_month_name} {year} actual core MoM consensus expectation",
+    "CPI": "US consumer price index {prev_month_name} {year} inflation rate",
     "FedWatch": "Fed funds rate probability {month_name} {year} CME",
     "PutCallRatio": "CBOE equity put call ratio today level",
-    "Liquidity": "Fed RRP balance {month_name} {year}",
+    "Liquidity": "Fed RRP facility balance {month_name} {year} billion",
     "Calendar": "US economic data releases calendar this week {today_str}",
-    "Earnings": "AAPL MSFT NVDA next quarterly earnings report date {year}",
+    "Earnings": "big tech earnings calendar {year} Q3 Apple Microsoft NVIDIA",
 }
 
 
