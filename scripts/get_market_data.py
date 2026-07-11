@@ -859,69 +859,89 @@ def fetch_economic_calendar():
     try:
         from camoufox.sync_api import Camoufox
 
-        with Camoufox(
-            headless=True,
-            humanize=True,
-            geoip=True,
-            block_webrtc=True,
-        ) as browser:
-            page = browser.new_page()
-            page.goto("https://www.forexfactory.com/calendar", timeout=60000)
-            page.wait_for_selector("table.calendar__table", timeout=30000)
-            page.wait_for_timeout(2000)
+        _script_dir = os.path.dirname(os.path.abspath(__file__))
+        _user_data_dir = os.path.join(_script_dir, "temp", "browser_data")
 
-            content = page.content()
+        def _try_camoufox(headless: bool):
+            """尝试用 Camoufox 抓取 ForexFactory 页面，成功返回 HTML，失败返回 None"""
+            try:
+                with Camoufox(
+                    headless=headless,
+                    humanize=True,
+                    geoip=True,
+                    block_webrtc=True,
+                    persistent_context=True,
+                    user_data_dir=_user_data_dir,
+                ) as browser:
+                    page = browser.new_page()
+                    page.goto("https://www.forexfactory.com/calendar", timeout=60000)
+                    page.wait_for_selector("table.calendar__table", timeout=30000)
+                    page.wait_for_timeout(2000)
+                    return page.content()
+            except Exception:
+                return None
 
-        dates = re.findall(
-            r'<td[^>]*class="[^"]*calendar__date[^"]*"[^>]*>(.*?)</td>',
-            content, re.DOTALL
-        )
-        events = re.findall(
-            r'<td[^>]*class="[^"]*calendar__event[^"]*"[^>]*>(.*?)</td>',
-            content, re.DOTALL
-        )
-        currencies = re.findall(
-            r'<td[^>]*class="[^"]*calendar__currency[^"]*"[^>]*>(.*?)</td>',
-            content, re.DOTALL
-        )
-        impacts = re.findall(
-            r'<td[^>]*class="[^"]*calendar__impact[^"]*"[^>]*>(.*?)</td>',
-            content, re.DOTALL
-        )
-        actuals = re.findall(
-            r'<td[^>]*class="[^"]*calendar__actual[^"]*"[^>]*>(.*?)</td>',
-            content, re.DOTALL
-        )
-        forecasts = re.findall(
-            r'<td[^>]*class="[^"]*calendar__forecast[^"]*"[^>]*>(.*?)</td>',
-            content, re.DOTALL
-        )
-        previous = re.findall(
-            r'<td[^>]*class="[^"]*calendar__previous[^"]*"[^>]*>(.*?)</td>',
-            content, re.DOTALL
-        )
+        # 先 headless 尝试（复用已保存的 Cookie）
+        content = _try_camoufox(headless=True)
+        # 失败则 headless=False 重试（弹出浏览器处理 Cloudflare 验证）
+        if not content:
+            print("  headless 模式被 Cloudflare 拦截，尝试可见浏览器模式...")
+            print("  请在弹出的浏览器中完成验证，验证通过后数据将自动获取")
+            content = _try_camoufox(headless=False)
 
-        last_date = ""
-        for i in range(min(len(events), 50)):
-            raw_date = _clean_html(dates[i]) if i < len(dates) else ""
-            if raw_date:
-                last_date = raw_date
-            # impact 从 CSS class 中提取：icon--ff-impact-red/ora/yel
-            raw_impact = impacts[i] if i < len(impacts) else ""
-            impact_class = re.search(r'icon--ff-impact-(\w+)', raw_impact)
-            impact_map = {"red": "高", "ora": "中", "yel": "低"}
-            impact = impact_map.get(impact_class.group(1), "?") if impact_class else "?"
+        if not content:
+            print("  Camoufox 两次尝试均失败，跳过 ForexFactory")
+        else:
+            dates = re.findall(
+                r'<td[^>]*class="[^"]*calendar__date[^"]*"[^>]*>(.*?)</td>',
+                content, re.DOTALL
+            )
+            events = re.findall(
+                r'<td[^>]*class="[^"]*calendar__event[^"]*"[^>]*>(.*?)</td>',
+                content, re.DOTALL
+            )
+            currencies = re.findall(
+                r'<td[^>]*class="[^"]*calendar__currency[^"]*"[^>]*>(.*?)</td>',
+                content, re.DOTALL
+            )
+            impacts = re.findall(
+                r'<td[^>]*class="[^"]*calendar__impact[^"]*"[^>]*>(.*?)</td>',
+                content, re.DOTALL
+            )
+            actuals = re.findall(
+                r'<td[^>]*class="[^"]*calendar__actual[^"]*"[^>]*>(.*?)</td>',
+                content, re.DOTALL
+            )
+            forecasts = re.findall(
+                r'<td[^>]*class="[^"]*calendar__forecast[^"]*"[^>]*>(.*?)</td>',
+                content, re.DOTALL
+            )
+            previous = re.findall(
+                r'<td[^>]*class="[^"]*calendar__previous[^"]*"[^>]*>(.*?)</td>',
+                content, re.DOTALL
+            )
 
-            results.append({
-                "date": last_date,
-                "currency": _clean_html(currencies[i]) if i < len(currencies) else "?",
-                "event": _clean_html(events[i]) if i < len(events) else "?",
-                "impact": impact,
-                "actual": _clean_html(actuals[i]) if i < len(actuals) else "-",
-                "forecast": _clean_html(forecasts[i]) if i < len(forecasts) else "-",
-                "previous": _clean_html(previous[i]) if i < len(previous) else "-",
-                "source": "forexfactory"
-            })
+            last_date = ""
+            for i in range(min(len(events), 50)):
+                raw_date = _clean_html(dates[i]) if i < len(dates) else ""
+                if raw_date:
+                    last_date = raw_date
+                # impact 从 CSS class 中提取：icon--ff-impact-red/ora/yel
+                raw_impact = impacts[i] if i < len(impacts) else ""
+                impact_class = re.search(r'icon--ff-impact-(\w+)', raw_impact)
+                impact_map = {"red": "高", "ora": "中", "yel": "低"}
+                impact = impact_map.get(impact_class.group(1), "?") if impact_class else "?"
+
+                results.append({
+                    "date": last_date,
+                    "currency": _clean_html(currencies[i]) if i < len(currencies) else "?",
+                    "event": _clean_html(events[i]) if i < len(events) else "?",
+                    "impact": impact,
+                    "actual": _clean_html(actuals[i]) if i < len(actuals) else "-",
+                    "forecast": _clean_html(forecasts[i]) if i < len(forecasts) else "-",
+                    "previous": _clean_html(previous[i]) if i < len(previous) else "-",
+                    "source": "forexfactory"
+                })
 
     except ImportError:
         # Camoufox 未安装，降级尝试 urllib 直连
