@@ -164,6 +164,8 @@ python scripts/vnpy_command.py [--token TOKEN] publish <用户名> <key路径> [
   - 如 `/global:config` → `global:config`
   - 如 `/vnpy:global:notice` → `vnpy:global:notice`
 
+> **注意**：读写以 `/` 开头的全局 key 时，`<用户名>` 参数不会被使用，可以传任意占位符（如 `-`）代替真实用户名。
+
 参数：
 
 - `key_path`：key 路径后缀或全局 key（以 `/` 开头）
@@ -218,6 +220,8 @@ python scripts/vnpy_command.py [--token TOKEN] get <用户名> <key路径>
 
 - **带用户前缀**：key_path 不以 `/` 开头，完整 key = `vnpy:{username}:{key_path}`
 - **全局 key**：key_path 以 `/` 开头，完整 key = 去掉 `/` 后的内容
+
+> **注意**：读写以 `/` 开头的全局 key 时，`<用户名>` 参数不会被使用，可以传任意占位符（如 `-`）代替真实用户名。
 
 示例：
 ```bash

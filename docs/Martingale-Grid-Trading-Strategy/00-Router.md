@@ -31,11 +31,11 @@
 
 **1. 每次分析前，必须获取"大盘与板块和资金流向分析"缓存（全局市场环境）**
 根据品种所属市场选其一执行：
-- 美股：`python scripts/vnpy_command.py get - /vnpy:美股:大盘与板块和资金流向分析`
-- 加密货币：`python scripts/vnpy_command.py get - /vnpy:加密货币:大盘与板块和资金流向分析`
-- 中国期货：`python scripts/vnpy_command.py get - /vnpy:中国期货:大盘与板块和资金流向分析`
-- 中国A股：`python scripts/vnpy_command.py get - /vnpy:中国A股:大盘与板块和资金流向分析`
-- 港股：`python scripts/vnpy_command.py get - /vnpy:港股:大盘与板块和资金流向分析`
+- 美股：`python scripts/vnpy_command.py get 用户名 /vnpy:美股:大盘与板块和资金流向分析`
+- 加密货币：`python scripts/vnpy_command.py get 用户名 /vnpy:加密货币:大盘与板块和资金流向分析`
+- 中国期货：`python scripts/vnpy_command.py get 用户名 /vnpy:中国期货:大盘与板块和资金流向分析`
+- 中国A股：`python scripts/vnpy_command.py get 用户名 /vnpy:中国A股:大盘与板块和资金流向分析`
+- 港股：`python scripts/vnpy_command.py get 用户名 /vnpy:港股:大盘与板块和资金流向分析`
 
 **2.  每次分析前，必须获取个股信息（新闻+评级+技术指标：ATR/CCI/支撑压力/均线/成交量/风险收益比/价格分位）**
 如果没有yahoo ticker， 必须从[股票品种表](../../scripts/vt_symbol_info.json) ，或者其他方法，查找 vt_symbol 对应的 yahoo ticker，例如 `265598.SMART → AAPL`

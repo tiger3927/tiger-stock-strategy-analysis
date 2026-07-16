@@ -51,24 +51,24 @@
 
 ```bash
 # 做多方向
-python scripts/vnpy_command.py get - "/vnpy:美股:做多选股分析结果"
+python scripts/vnpy_command.py get 用户名 "/vnpy:美股:做多选股分析结果"
 
 # 做空方向
-python scripts/vnpy_command.py get - "/vnpy:美股:做空选股分析结果"
+python scripts/vnpy_command.py get 用户名 "/vnpy:美股:做空选股分析结果"
 ```
 
 - 根据 `direction` 选择对应的缓存 key
 - 如果缓存存在 **且** 距今 **≤ 24 小时** → **直接完整返回缓存 JSON，本模块执行结束。禁止重新分析。**
 - 如果缓存不存在 **或** 距今 **> 24 小时** → 继续 Step 1
 
-> 缓存 key 以 `/` 开头表示公共数据，不归属任何用户。
+> 缓存 key 以 `/` 开头表示公共数据，不归属任何用户。`get` 命令中的 `-` 是用户名占位符（公用 key 无需具体用户名），读取时会被忽略。
 
 ### Step 1：获取大盘环境
 
 **不重新分析大盘**，直接复用已有的大盘分析缓存。
 
 ```bash
-python scripts/vnpy_command.py get - "/vnpy:美股:大盘与板块和资金流向分析"
+python scripts/vnpy_command.py get 用户名 "/vnpy:美股:大盘与板块和资金流向分析"
 ```
 
 - 如果缓存存在 → 解析 JSON，提取 `执行层摘要`（direction / risk_budget）、`板块轮动`（主线板块）、`风险提示` 等关键字段
