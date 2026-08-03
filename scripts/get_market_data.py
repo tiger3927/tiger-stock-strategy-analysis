@@ -53,7 +53,15 @@ from requests_cache import CachedSession
 from bs4 import BeautifulSoup
 import numpy as np
 import random
+import pandas as pd
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# curl_cffi 可选导入（用于走代理直调 Yahoo chart API，替代被风控的 yfinance 内部请求）
+try:
+    from curl_cffi import requests as cfr
+    _HAS_CURL_CFFI = True
+except ImportError:
+    _HAS_CURL_CFFI = False
 
 
 # ==================== 全局常量 ====================
@@ -221,6 +229,220 @@ MARKET_BATCHES = {
 }
 
 
+# ==================== 代理检测 + 智能数据获取 ====================
+#
+# 背景：yfinance 1.3.0 内部请求不走代理（即使传了代理 session 也 429/403），
+#       而 Yahoo Finance 对本机直连 IP 做了反爬风控（HTTP 403 / RateLimited）。
+# 策略：先探测本机 SOCKS5 代理 (127.0.0.1:10808) 是否可用；
+#       可用 → 用 curl_cffi 走 socks5h 直调 Yahoo chart API（返回 DataFrame）；
+#       不可用 → 回落到 yfinance 原生调用。
+#
+
+# 默认 SOCKS5 代理（Windows 宿主 V2Ray），可用环境变量覆盖
+_SOCKS5_DEFAULT = "127.0.0.1:10808"
+_SOCKS5_ADDR = os.environ.get("YF_SOCKS5", _SOCKS5_DEFAULT).lstrip("socks5h://").lstrip("socks5://")
+
+# 代理可用性缓存（探测一次即可，30 秒内不重复探测）
+_proxy_check_cache = {"time": 0.0, "available": False}
+_proxy_check_ttl = 30.0
+
+# Yahoo crumb 缓存（带 cookie 的 curl_cffi Session + crumb，避免每次重新获取）
+_proxy_crumb_cache = {"session": None, "crumb": None, "time": 0.0}
+_proxy_crumb_ttl = 1800.0  # 30 分钟
+
+# Yahoo chart API 请求头（模拟浏览器，降低风控概率）
+_YAHOO_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/125.0.0.0 Safari/537.36"
+)
+
+# 已确认的 Yahoo 查询主机（yfinance 底层，wind 也走这两个）
+_YAHOO_HOSTS = ["query1.finance.yahoo.com", "query2.finance.yahoo.com"]
+
+
+# 周期 → chart API range 参数映射
+def _period_to_range(period: str) -> str:
+    """把 yfinance 的 period 参数映射为 Yahoo chart API 的 range 参数"""
+    m = re.match(r"(\d+)([a-zA-Z]+)", str(period).strip())
+    if m:
+        num, unit = m.group(1), m.group(2).lower()
+        if unit in ("d", "mo", "y"):
+            return f"{num}{'d' if unit=='d' else ('mo' if unit=='mo' else 'y')}"
+    # 常见命名
+    return {
+        "1d": "1d", "5d": "5d", "1mo": "1mo", "3mo": "3mo",
+        "6mo": "6mo", "1y": "1y", "2y": "2y", "5y": "5y", "max": "max",
+    }.get(period, "1y")
+
+
+def _is_socks_proxy_available() -> bool:
+    """探测 127.0.0.1:10808 是否开放（带 30s 缓存）"""
+    now = time.time()
+    if now - _proxy_check_cache["time"] < _proxy_check_ttl:
+        return _proxy_check_cache["available"]
+
+    host, _, port = _SOCKS5_ADDR.partition(":")
+    available = False
+    try:
+        import socket
+        s = socket.create_connection((host or "127.0.0.1", int(port or "10808")), timeout=1.5)
+        s.close()
+        available = True
+    except Exception:
+        available = False
+
+    _proxy_check_cache["time"] = now
+    _proxy_check_cache["available"] = available
+    return available
+
+
+def _make_proxy_cfr_session():
+    """构造走 socks5h 代理的 curl_cffi Session"""
+    proxy_url = f"socks5h://{_SOCKS5_ADDR}"
+    return cfr.Session(proxies={"http": proxy_url, "https": proxy_url}, timeout=15)
+
+
+def _get_proxy_session_with_crumb():
+    """返回(走代理的 curl_cffi Session, Yahoo crumb)。带 30 分钟缓存。"""
+    import time as _t
+    now = _t.time()
+    cache = _proxy_crumb_cache
+    if cache["session"] is not None and now - cache["time"] < _proxy_crumb_ttl\
+            and cache["crumb"] is not None:
+        return cache["session"], cache["crumb"]
+
+    session = _make_proxy_cfr_session()
+    session.headers.setdefault("User-Agent", _YAHOO_UA)
+    crumb = None
+    try:
+        # 1. 访问 fc.yahoo.com 拿 A3 cookie
+        session.get("https://fc.yahoo.com", timeout=15)
+        # 2. 带 cookie 拿 crumb
+        r = session.get("https://query1.finance.yahoo.com/v1/test/getcrumb", timeout=15)
+        if r.status_code == 200 and r.text.strip():
+            crumb = r.text.strip()
+    except Exception:
+        crumb = None
+
+    cache["session"] = session
+    cache["crumb"] = crumb
+    cache["time"] = now
+    return session, crumb
+
+
+def _fetch_proxy_json(url: str, params: dict = None) -> dict:
+    """
+    走 socks5h 代理 + crumb 请求 Yahoo JSON API。
+    成功返回 dict，失败返回 None（不抛异常）。
+    """
+    if not (_HAS_CURL_CFFI and _is_socks_proxy_available()):
+        return None
+    try:
+        session, crumb = _get_proxy_session_with_crumb()
+        if crumb is None:
+            return None
+        if params is None:
+            params = {}
+        else:
+            params = dict(params)
+        params["crumb"] = crumb
+        resp = session.get(url, params=params, timeout=20)
+        if resp.status_code != 200:
+            return None
+        return resp.json()
+    except Exception:
+        return None
+
+
+def _fetch_proxy_text(url: str, headers: dict = None, timeout: int = 20) -> str:
+    """
+    走 socks5h 代理的通用 GET（返回文本）。
+    失败返回 None。
+    """
+    if not (_HAS_CURL_CFFI and _is_socks_proxy_available()):
+        return None
+    try:
+        session = _make_proxy_cfr_session()
+        if headers:
+            session.headers.update(headers)
+        else:
+            session.headers.setdefault("User-Agent", _YAHOO_UA)
+        resp = session.get(url, timeout=timeout)
+        if resp.status_code != 200:
+            return None
+        return resp.text
+    except Exception:
+        return None
+
+
+def _fetch_chart_via_proxy(ticker: str, period: str) -> pd.DataFrame:
+    """
+    用 curl_cffi + socks5 代理直调 Yahoo chart API，返回与 yfinance 兼容的 DataFrame。
+    返回列：Date(index, TZ-aware), Open, High, Low, Close, Volume
+    """
+    rng = _period_to_range(period)
+    last_err = None
+    for host in _YAHOO_HOSTS:
+        url = f"https://{host}/v8/finance/chart/{ticker}"
+        try:
+            session = _make_proxy_cfr_session()
+            resp = session.get(
+                url,
+                params={"range": rng, "interval": "1d", "includePrePost": "false"},
+                headers={"User-Agent": _YAHOO_UA},
+            )
+            if resp.status_code != 200:
+                last_err = f"HTTP {resp.status_code}"
+                continue
+            data = resp.json()
+            result = (data.get("chart") or {}).get("result")
+            if not result:
+                last_err = "无 result"
+                continue
+            result = result[0]
+            ts = result.get("timestamp") or []
+            quote = (result.get("indicators") or {}).get("quote") or [{}]
+            quote = quote[0] if quote else {}
+            if not ts:
+                last_err = "无时间戳"
+                continue
+            rows = {
+                "Date": pd.to_datetime(ts, unit="s"),
+                "Open": quote.get("open"),
+                "High": quote.get("high"),
+                "Low": quote.get("low"),
+                "Close": quote.get("close"),
+                "Volume": quote.get("volume"),
+            }
+            df = pd.DataFrame(rows).set_index("Date")
+            # 去掉全 NaN / 无收盘价的行（非交易日或停牌）
+            df = df.dropna(subset=["Close"])
+            if df.empty:
+                last_err = "数据为空"
+                continue
+            return df
+        except Exception as e:
+            last_err = f"{type(e).__name__}: {e}"
+            continue
+    raise RuntimeError(f"走代理获取 {ticker} 失败: {last_err}")
+
+
+def get_history_dataframe(ticker: str, period: str = "1y") -> pd.DataFrame:
+    """
+    统一历史数据入口：优先走代理（可用时），否则回落 yfinance。
+    返回与 yfinance history() 兼容的 DataFrame（列 Open/High/Low/Close/Volume）。
+    失败抛异常。
+    """
+    if _HAS_CURL_CFFI and _is_socks_proxy_available():
+        try:
+            return _fetch_chart_via_proxy(ticker, period)
+        except Exception:
+            pass  # 走代理失败，回落到 yfinance
+    # 回落：yfinance 原生（无代理）
+    return yf.Ticker(ticker).history(period=period)
+
+
 def safe_float(v, default=None):
     """安全转 float，None/NaN → default"""
     if v is None:
@@ -261,11 +483,47 @@ def _get_info_cached(ticker: str) -> dict:
                 pass  # 缓存损坏，重新获取
 
     # 实时获取
-    stock = yf.Ticker(ticker)
-    try:
-        info = stock.info
-    except Exception:
-        info = {}
+    info = None
+    # 优先：走 socks5h 代理 + crumb 调 quoteSummary（规避 yfinance info 429 风控）
+    if _HAS_CURL_CFFI and _is_socks_proxy_available():
+        quote_summary = _fetch_proxy_json(
+            "https://query1.finance.yahoo.com/v10/finance/quoteSummary/" + ticker,
+            {"modules": "assetProfile,price,summaryDetail,financialData,defaultKeyStatistics"},
+        )
+        if quote_summary:
+            res = ((quote_summary.get("quoteSummary") or {}).get("result") or [None])[0]
+        else:
+            res = None
+        if res:
+            info = {}
+            sd = res.get("summaryDetail") or {}
+            fin = res.get("financialData") or {}
+            ap = res.get("assetProfile") or {}
+            pr = res.get("price") or {}
+            dks = res.get("defaultKeyStatistics") or {}
+            for k in ["marketCap", "trailingPE", "priceToBook", "sharesOutstanding",
+                      "regularMarketVolume", "floatShares"]:
+                v = ((sd.get(k) or {}).get("raw"))
+                if v is None:
+                    v = ((dks.get(k) or {}).get("raw"))
+                info[k] = v
+            info["returnOnEquity"] = (fin.get("returnOnEquity") or {}).get("raw")
+            info["revenueGrowth"] = (fin.get("revenueGrowth") or {}).get("raw")
+            info["totalRevenue"] = (fin.get("totalRevenue") or {}).get("raw")
+            info["sector"] = ap.get("sector")
+            info["industry"] = ap.get("industry")
+            info["shortName"] = (pr.get("shortName") or "")
+            info["longName"] = (pr.get("longName") or "")
+            info["regularMarketPrice"] = ((pr.get("regularMarketPrice") or {}).get("raw"))
+            info["regularMarketPreviousClose"] = ((pr.get("regularMarketPreviousClose") or {}).get("raw"))
+
+    # 回落：yfinance 原生 info（代理不可用或走代理失败时）
+    if info is None:
+        stock = yf.Ticker(ticker)
+        try:
+            info = stock.info
+        except Exception:
+            info = {}
 
     # 写入缓存（仅写入非空结果）
     if info:
@@ -295,7 +553,7 @@ def get_ticker_data(ticker: str, session: CachedSession = None) -> dict:
     for attempt in range(max_retries):
         try:
             stock = yf.Ticker(ticker)
-            hist = stock.history(period="1y")
+            hist = get_history_dataframe(ticker, "1y")
             if hist.empty:
                 if attempt < max_retries - 1:
                     wait = (2 ** attempt) + random.uniform(0, 1)
@@ -614,6 +872,13 @@ def _fetch_url(url, headers=None, timeout=15, retries=2):
     if headers:
         default_headers.update(headers)
 
+    # 优先：走 socks5h 代理（规避直连被 Yahoo/目标站点封锁）
+    if _HAS_CURL_CFFI and _is_socks_proxy_available():
+        proxied = _fetch_proxy_text(url, headers=default_headers, timeout=timeout)
+        if proxied is not None:
+            return proxied
+
+    # 回落：urllib 直连
     last_error = None
     for attempt in range(retries + 1):
         try:
@@ -1337,12 +1602,12 @@ def fetch_technical_indicators(ticker):
     stock = yf.Ticker(ticker)
 
     # 近 3 个月日线（用于 ATR, CCI, 支撑压力位）
-    df_3mo = stock.history(period="3mo")
+    df_3mo = get_history_dataframe(ticker, "3mo")
     if df_3mo.empty:
         return {"error": f"无法获取 {ticker} 的 3 个月数据"}
 
     # 近 1 年日线（用于均线计算，MA200 需要约 200 个交易日）
-    df_1y = stock.history(period="1y")
+    df_1y = get_history_dataframe(ticker, "1y")
     if df_1y.empty:
         df_1y = df_3mo
 
@@ -1354,7 +1619,7 @@ def fetch_technical_indicators(ticker):
     current_price = round(float(close_vals[-1]), 2)
 
     # 近 5 日（用于 24h 分位近似）
-    df_5d = stock.history(period="5d")
+    df_5d = get_history_dataframe(ticker, "5d")
     if df_5d.empty:
         df_5d = df_3mo.tail(5)
 
