@@ -91,42 +91,24 @@ web_search 使用 Tavily 引擎，每月限额 1000 次，超出后 web_search �
 
 ### 用外部技能联网查询分析的信息
 
-### vnpy_mcp 工具查询量化系统实时信息（优先）
+### vnpy_mcp 工具查询与操作（优先）
 
-通过 **vnpy_mcp** 工具集直连量化系统，获取账户、持仓、策略状态、分析报告等实时数据。**无需用户名参数，直接调用即可。**
+**vnpy_mcp 是 MCP 工具，不是普通参考文档。**
 
-常用查询工具：
+凡是涉及以下事项，**优先直接调用 vnpy_mcp 工具**，不要先反复阅读本文来替代工具调用：
+- 账户、持仓、活动委托、成交记录
+- 策略状态、策略参数、策略分析记录
+- 大盘分析报告、选股结果报告
+- 合约、vt_symbol、ConID、Tick、历史 K 线
+- 调仓、平仓、设参、发送通知、启停策略、新增/删除策略
 
-| 工具 | 用途 |
-|------|------|
-| `ping` | 健康检查，返回 pong 表示服务正常 |
-| `get_accounts` | 获取所有账户余额信息（实时） |
-| `get_positions` | 获取所有持仓信息（实时） |
-| `get_active_orders` | 获取所有活动委托（未成交/部分成交） |
-| `get_trades` | 获取本次启动后的成交记录 |
-| `cta_strategies_get_all` | 获取所有策略运行概况（持仓/盈亏/资金占比/网格/止盈止损/运行状态/品种信息） |
-| `cta_strategy_get_status` | 获取指定策略完整状态（持仓/参数/变量，中文键名） |
-| `cta_strategy_get_parameters_info` | 获取指定策略的关键参数说明 |
-| `cta_report_list` | 列出所有分析报告目次（大盘分析/选股/策略记录） |
-| `cta_report_get` | 获取指定分析报告内容（如"美股大盘与板块和资金流向分析"） |
-| `get_tick` / `get_history_bars` / `get_contract` / `search_vt_symbol` | 行情/合约/ConID 查询 |
+执行规则：
+1. **先调用 `get_guide`** 获取 vnpy_mcp 工具集完整指南。
+2. 查询实时数据时，**直接调用 vnpy_mcp**，不要把文档内容当作实时数据来源。
+3. 只有在**忘记工具名、参数名、返回字段**时，才回看 [docs/vnpy_mcp.md](docs/vnpy_mcp.md)。
+4. 如需发送操作指令，前提是**量化系统必须正在运行**。
 
-**注意**：使用前先调用 `get_guide` 了解工具集完整指南。
-
-### vnpy_mcp 工具发送操作指令
-
-如需要向量化程序发送操作指令（开平仓、调仓、设置策略参数、发送通知、启停策略等），直接使用 vnpy_mcp 工具，前提是量化系统必须正在运行。
-
-#### 支持的操作工具
-
-| 工具 | 说明 |
-|------|------|
-| `cta_strategy_set_target_pos` | 设置策略目标仓位（正数=多，负数=空，0=空仓） |
-| `cta_strategy_close` | 执行策略平仓（设置目标仓位为 0） |
-| `cta_strategy_set_parameters` | 修改策略运行参数（立即生效，无需重启） |
-| `cta_strategy_send_notice` | 向策略发送通知信息 |
-| `cta_strategy_start` / `cta_strategy_stop` | 启动 / 停止策略 |
-| `cta_strategy_add_and_start` / `cta_strategy_delete` | 新增并启动 / 删除策略 |
+> `SKILL.md` 只负责路由和优先级说明；vnpy_mcp 的具体工具名、参数和返回格式，以 `get_guide` 和 [docs/vnpy_mcp.md](docs/vnpy_mcp.md) 为准。
 
 ## 大盘与板块和资金流向分析
 
