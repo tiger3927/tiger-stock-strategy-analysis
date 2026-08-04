@@ -16,7 +16,7 @@
 回答五个核心问题：
 
 ```text
-1. 当前大盘环境是否适合交易？  →  复用大盘分析缓存
+1. 当前大盘环境是否适合交易？  →  复用大盘分析报告
 2. 下一个可能轮动/流出的板块是什么？ →  板块轮动预测
 3. 哪些标的值得关注？          →  候选池筛选
 4. 每个标的的评分和入场计划？  →  评分卡打分
@@ -45,34 +45,34 @@
 > - `direction = 做空` → 执行【做空方向】分支，参照 [美股做空选择.md](美股做空选择.md)
 > - 如果用户未明确指定 `direction`，但表达中含有"做空/short/看跌"等语义 → 自动路由到做空分支
 
-### Step 0.5：检查缓存
+### Step 0.5：检查现有分析报告
 
-在执行任何数据获取之前，先检查 Redis 缓存中是否已有选股分析结果。
+在执行任何数据获取之前，先检查量化系统中是否已有选股分析报告（报告由量化系统自动保存），通过 vnpy_mcp 的 `cta_report_get` 读取：
 
-```bash
+```
 # 做多方向
-python scripts/vnpy_command.py get 用户名 "/vnpy:美股:做多选股分析结果"
+cta_report_get(report_kind="美股做多选股结果")
 
 # 做空方向
-python scripts/vnpy_command.py get 用户名 "/vnpy:美股:做空选股分析结果"
+cta_report_get(report_kind="美股做空选股结果")
 ```
 
-- 根据 `direction` 选择对应的缓存 key
-- 如果缓存存在 **且** 距今 **≤ 24 小时** → **直接完整返回缓存 JSON，本模块执行结束。禁止重新分析。**
-- 如果缓存不存在 **或** 距今 **> 24 小时** → 继续 Step 1
+- 根据 `direction` 选择对应的报告名称
+- 如果报告存在 **且** 距今 **≤ 24 小时** → **直接完整返回报告内容，本模块执行结束。禁止重新分析。**
+- 如果报告不存在 **或** 距今 **> 24 小时** → 继续 Step 1
 
-> 缓存 key 以 `/` 开头表示公共数据，不归属任何用户。`get` 命令中的 `-` 是用户名占位符（公用 key 无需具体用户名），读取时会被忽略。
+> 报告名称已注册在 [SKILL.md](../../SKILL.md) 中，直接读取即可。
 
 ### Step 1：获取大盘环境
 
-**不重新分析大盘**，直接复用已有的大盘分析缓存。
+**不重新分析大盘**，直接复用已有的大盘分析报告，通过 vnpy_mcp 的 `cta_report_get` 读取：
 
-```bash
-python scripts/vnpy_command.py get 用户名 "/vnpy:美股:大盘与板块和资金流向分析"
+```
+cta_report_get(report_kind="美股大盘与板块和资金流向分析")
 ```
 
-- 如果缓存存在 → 解析 JSON，提取 `执行层摘要`（direction / risk_budget）、`板块轮动`（主线板块）、`风险提示` 等关键字段
-- 如果缓存不存在 → 先执行大盘分析模块（按 [大盘与板块和资金流向分析/00_index.md](../大盘与板块和资金流向分析/00_index.md) 的流程），再取结果
+- 如果报告存在 → 解析内容，提取 `执行层摘要`（direction / risk_budget）、`板块轮动`（主线板块）、`风险提示` 等关键字段
+- 如果报告不存在 → 先执行大盘分析模块（按 [大盘与板块和资金流向分析/00_index.md](../大盘与板块和资金流向分析/00_index.md) 的流程），再取结果
 
 **大盘环境判断规则**：
 
@@ -100,7 +100,7 @@ python scripts/vnpy_command.py get 用户名 "/vnpy:美股:大盘与板块和资
 
 #### 1.5.1 读取板块轮动状态
 
-从大盘缓存中提取以下字段：
+从大盘分析报告中提取以下字段：
 
 | 字段 | 用途 |
 |------|------|
@@ -511,34 +511,11 @@ web_search "{ticker} insider buying selling 2026"
 
 按【六、输出模板】生成结构化 JSON 结果。
 
-> **⚠️ 禁止保存 JSON 文件到磁盘**：生成的 JSON 结果**只返回给用户 + 发布到 Redis**，不得在本地保留任何中间结果文件。如果 AI 有自动保存中间结果的习惯，请在此步骤关闭。
+> **⚠️ 禁止保存 JSON 文件到磁盘**：生成的 JSON 结果**只返回给用户**（由量化系统自动保存为分析报告），不得在本地保留任何中间结果文件。如果 AI 有自动保存中间结果的习惯，请在此步骤关闭。
 
-### Step 10：保存结果到缓存
+### Step 10：以 JSON 格式输出（不保存 JSON 文件）
 
-将生成的 JSON 结果写入 Redis 缓存。由于选股结果内容较大（可能几千字），**必须使用 `--file` 参数**从临时文件读取，避免命令行长度限制。
-
-临时文件统一存放在 `tests\tmp\` 目录下，发布后**必须删除**，避免残留过多：
-
-```powershell
-# 1. 将 JSON 结果写入临时文件
-@'
-{json结果}
-'@ | Set-Content tests\tmp\stock_pick_result.json -Encoding utf8
-
-# 2. 发布到 Redis（做多方向）
-python scripts/vnpy_command.py --token TOKEN publish 用户名 /vnpy:美股:做多选股分析结果 --file tests\tmp\stock_pick_result.json --expire 86400
-
-# 3. 清理临时文件
-Remove-Item tests\tmp\stock_pick_result.json
-```
-
-做空方向同理，替换 key 为 `/vnpy:美股:做空选股分析结果`。
-
-- `--expire 86400` = 24 小时过期，与缓存时效一致
-- key 以 `/` 开头表示公共数据，不归属任何用户
-- 根据 `direction` 选择对应的缓存 key
-- 发布完成后**必须删除临时文件**，遵守"不保留中间结果"原则
-- **注意**：如果中途中断（如 Ctrl+C），请手动执行 `Remove-Item tests\tmp\stock_pick_result.json` 清理残留文件
+分析完成后，**以 JSON 格式输出结果（不保存 JSON 文件）**。智能体只需在回答中携带完整 JSON 内容，量化系统收到后会自动记录为分析报告（做多 `美股做多选股结果` / 做空 `美股做空选股结果`），后续可通过 `cta_report_get` 直接读取。
 
 ---
 
@@ -546,7 +523,7 @@ Remove-Item tests\tmp\stock_pick_result.json
 
 | 数据类别 | 首选方式 | 降级方式 |
 |---------|---------|---------|
-| 大盘环境 | 复用缓存 `/vnpy:美股:大盘与板块和资金流向分析` | 执行大盘分析模块 |
+| 大盘环境 | `cta_report_get` 读取 `美股大盘与板块和资金流向分析` 报告 | 执行大盘分析模块 |
 | 板块相对强弱 | `get_market_data.py --batch us-sectors` | `web_search` 逐个查询板块 ETF |
 | 候选池价格/均线/成交量 | `get_market_data.py --tickers` | `web_search` 逐个查询 |
 | 基本面指标（PE/PEG/增速） | `web_search` 批量搜索 | 逐个搜索 |
@@ -561,7 +538,7 @@ Remove-Item tests\tmp\stock_pick_result.json
 |------|---------|
 | 某只标的的基本面数据无法获取 | 标记该标的 `fundamental_data_missing`，跳过该标的 |
 | 某只标的的技术面数据缺失 | 标记该标的 `technical_data_missing`，跳过该标的 |
-| 大盘缓存不存在 | 先执行大盘分析模块，再继续选股 |
+| 大盘报告不存在 | 先执行大盘分析模块，再继续选股 |
 | 候选池中超过 50% 标的无法获取数据 | 降低置信度，在输出中标注 `low_data_quality` |
 | 所有标的评分均 < 3.5 | 输出「当前未找到符合条件的标的」，列出评分最高的 3 只及差距 |
 
@@ -571,15 +548,15 @@ Remove-Item tests\tmp\stock_pick_result.json
 
 | 步骤 | 调用次数上限 |
 |------|------------|
-| Step 0.5 查缓存 | 1 |
-| Step 1 读大盘缓存 | 1 |
+| Step 0.5 检查报告 | 1 |
+| Step 1 读大盘报告 | 1 |
 | Step 1.5 获取板块数据 | 1 |
 | Step 3 获取候选池数据 | 1-2 |
 | Step 4 基本面搜索 | 2-3 |
 | Step 6 深度尽调（product-all-info） | 3-5 |
 | Step 6 深度尽调（web_search） | 5-8 |
 | Step 7.5 反方审查（web_search） | 2-3 |
-| Step 10 保存缓存 | 1 |
+| Step 10 输出结果 | 0 |
 | **合计** | **≤ 25 次** |
 
 超出预算仍未完成时，停止取数，将未获取项全部标记 `missing` 并下调置信度，直接输出。
@@ -607,8 +584,8 @@ AI 完成分析后，必须按以下 JSON 格式返回结果：
     "macro_summary": {
         "direction": "看多 / 看空 / 震荡",
         "risk_budget": 65,
-        "source_cache_key": "/vnpy:美股:大盘与板块和资金流向分析",
-        "cache_time": "2026-06-24 10:00:00 UTC"
+        "source_report": "美股大盘与板块和资金流向分析",
+        "report_time": "2026-06-24 10:00:00 UTC"
     },
     "下一轮动预测": {
         "预测板块": "金融",

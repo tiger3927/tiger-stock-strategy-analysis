@@ -1,6 +1,6 @@
 ---
 name: "tiger-stock-strategy-analysis"
-description: "股票量化策略分析工具：为 vnpy 量化软件提供策略分析和下单前审核。支持智能马丁格尔策略(openclaw-martin)、多信号权重评分趋势策略（Multi\_Signal\_Treand）、智能短期趋势策略(openclaw-trend)；可查询用户 redis 上的vnpy的量化交易账户信息、策略执行信息，并可向量化程序发送操作和查询指令（开平仓、调仓、行情查询等、查询盈透IBKR的conid）。无需 API key。以及，vnpy整体持仓分析与风控。"
+description: "股票量化策略分析工具：为 vnpy 量化软件提供策略分析和下单前审核。支持智能马丁格尔策略(openclaw-martin)、多信号权重评分趋势策略（Multi\_Signal\_Treand）、智能短期趋势策略(openclaw-trend)；可通过 vnpy_mcp 查询量化系统的账户信息、策略执行信息与分析报告，并可向量化程序发送操作和查询指令（开平仓、调仓、行情查询等、查询盈透IBKR的conid）。无需 API key。以及，vnpy整体持仓分析与风控。"
 ---
 
 # tiger-stock-strategy-analysis
@@ -15,8 +15,7 @@ description: "股票量化策略分析工具：为 vnpy 量化软件提供策略
 
 推荐的美股的盈透conid参考：
 [scripts/vt\_symbol\_info.json](scripts/vt_symbol_info.json)
-如果上述文档中不包含，可以通过如下方式查询美股的盈透的conid：
-[docs/vnpy-command-tool.md](docs/vnpy-command-tool.md)
+如果上述文档中不包含，可通过 vnpy_mcp 的 `search_vt_symbol` / `get_contract` 工具实时查询。
 
 ## 信息获取方法（缓存优先 + 增量更新）
 
@@ -57,37 +56,32 @@ description: "股票量化策略分析工具：为 vnpy 量化软件提供策略
 
 web_search 使用 Tavily 引擎，每月限额 1000 次，超出后 web_search 将不可用。
 
-替代方案（通过 web_fetch 依次尝试）：
+**首选替代：OrioSearch（`https://search.my-gun.top`）** — 自建搜索服务，提供与 Tavily 相同的协议接口，**无需 API key**。
+
+接口：`POST https://search.my-gun.top/search`，请求体（Tavily 兼容）：
+
+```json
+{
+    "query": "搜索内容",
+    "search_depth": "basic",
+    "max_results": 5,
+    "include_answer": true
+}
+```
+
+返回 `answer`（AI 摘要）+ `results`（title/content/url 列表），用法：
+- 优先取 `answer` 字段（有 AI 摘要时最快）
+- `answer` 为空时，从 `results` 前 3-5 条提取 `title`+`content` 作为推算文本
+- `search_depth=advanced` 超时 → 降级 `basic` 重试
+- 注意：`content` 是 Meta Description 短摘要，截取 500 字符以内
+
+**其次：web_fetch 依次尝试**：
 
 ```
 1st: Startpage — Google 内核，无反爬，结果最全
 2nd: Brave   — 结果质量好，但有 429 限流
 3rd: Bing    — 稳定可靠，结果偏泛
 ```
-
-### 查询的信息存档
-
-路径规则 : \[工作区]/stock\_data/\[vt\_symbol]/
-分为每种技能获取的信息，对应不同的存档md文件
-
-| 外部技能名称                  | 文档名称                   | 文档用途：以QQQ指数产品为例                                         |
-| ----------------------- | ---------------------- | ------------------------------------------------------- |
-| web\_search             | web\_search.md         | 归集Barchart、TradingView、TipRanks等平台数据聚合信息，用于美股相关公开数据检索采集 |
-| yahoo-finance（yfinance） | yahoo-finance.md       | 作为核心数据源，存储个股价格、50日均线、200日均线、YTD涨幅等实时行情数据                |
-| us-stock-analysis       | us-stock-analysis.md   | 整理美股技术分析框架及各类技术指标解读逻辑，配合web\_search做行情深度分析              |
-| agent-reach（X/Twitter）  | agent-reach-twitter.md | 采集X/Twitter平台QQQ期权、五月期权到期相关市场讨论，用于市场舆情分析归档              |
-| agent-reach（Reddit）     | agent-reach-reddit.md  | 收录r/ETFs、r/QQQ等社区讨论内容与热度数据，记录美股社区情绪风向                   |
-| deep-research-pro       | deep-research-pro.md   | 整理个股及行业深度研究内容，沉淀基本面分析逻辑与投资逻辑框架                          |
-| multi-search-engine     | multi-search-engine.md | 记录TradingView、TipRanks、Barchart多平台数据交叉验证方法与结果，保障信息准确性   |
-| tavily                  | tavily.md              | 汇总行情指标、标的价格、市场综合资讯，整理机构价格目标预测相关信息                       |
-| qveris                  | qveris.md              | 独立行情API专用文档，归集行情自动采集、资讯信息抓取的接口规则与数据结果                   |
-| ddg-search              | ddg-search.md          | 留存DuckDuckGo网页检索原始HTML信息，用于泛市场资讯收集与原始素材归档               |
-
-重要规则 :
-
-- ✅ 存：外部信息、报告、分析结果
-- ❌ 不存：策略的当前信息（持仓、成本等），因为不同策略要复用这些外部数据
-  质量门槛 : 如果觉得信息收集不够全面或者质量较差， 不要写这个 md 文件
 
 ## 信息获取优先级（从高到低）
 
@@ -97,62 +91,71 @@ web_search 使用 Tavily 引擎，每月限额 1000 次，超出后 web_search �
 
 ### 用外部技能联网查询分析的信息
 
-### Redis API 查询账户和策略持仓信息
+### vnpy_mcp 工具查询量化系统实时信息（优先）
 
-如需要了解量化交易系统的持仓全貌，你可以从 redis api 查询整个量化交易系统的最新信息。
+通过 **vnpy_mcp** 工具集直连量化系统，获取账户、持仓、策略状态、分析报告等实时数据。**无需用户名参数，直接调用即可。**
 
-查询方式，详细用法见：[docs/redis-info.md](docs/redis-info.md)
+常用查询工具：
 
-**注意**：必须明确用户名，避免查错。
+| 工具 | 用途 |
+|------|------|
+| `ping` | 健康检查，返回 pong 表示服务正常 |
+| `get_accounts` | 获取所有账户余额信息（实时） |
+| `get_positions` | 获取所有持仓信息（实时） |
+| `get_active_orders` | 获取所有活动委托（未成交/部分成交） |
+| `get_trades` | 获取本次启动后的成交记录 |
+| `cta_strategies_get_all` | 获取所有策略运行概况（持仓/盈亏/资金占比/网格/止盈止损/运行状态/品种信息） |
+| `cta_strategy_get_status` | 获取指定策略完整状态（持仓/参数/变量，中文键名） |
+| `cta_strategy_get_parameters_info` | 获取指定策略的关键参数说明 |
+| `cta_report_list` | 列出所有分析报告目次（大盘分析/选股/策略记录） |
+| `cta_report_get` | 获取指定分析报告内容（如"美股大盘与板块和资金流向分析"） |
+| `get_tick` / `get_history_bars` / `get_contract` / `search_vt_symbol` | 行情/合约/ConID 查询 |
 
-### vnpy-command-tool，量化程序命令工具
+**注意**：使用前先调用 `get_guide` 了解工具集完整指南。
 
-如需要向量化程序发送操作指令（开平仓、调仓、查询行情和策略参数，设置策略参数，查美股在盈透的 ConID 等），可使用统一命令工具vnpy-command-tool，前提是量化系统必须正在运行。
+### vnpy_mcp 工具发送操作指令
 
-详细用法见：[docs/vnpy-command-tool.md](docs/vnpy-command-tool.md)
+如需要向量化程序发送操作指令（开平仓、调仓、设置策略参数、发送通知、启停策略等），直接使用 vnpy_mcp 工具，前提是量化系统必须正在运行。
 
-**注意**：该工具必须明确用户名和策略名，以及用户名，避免发错。
+#### 支持的操作工具
 
-#### 支持的命令类型
-
-| 命令                      | 说明                |
-| ----------------------- | ----------------- |
-| `conid`                 | 查询股票 IB ConID     |
-| `close`                 | 全部平仓              |
-| `query_strategy_status` | 查询策略完整状态信息        |
-| `set_target_pos`        | 调整目标持仓量           |
-| `notice`                | 发送通知消息            |
-| `publish`               | 向 Redis 发布信息（SET） |
-| `get`                   | 读取 Redis 信息（GET）  |
+| 工具 | 说明 |
+|------|------|
+| `cta_strategy_set_target_pos` | 设置策略目标仓位（正数=多，负数=空，0=空仓） |
+| `cta_strategy_close` | 执行策略平仓（设置目标仓位为 0） |
+| `cta_strategy_set_parameters` | 修改策略运行参数（立即生效，无需重启） |
+| `cta_strategy_send_notice` | 向策略发送通知信息 |
+| `cta_strategy_start` / `cta_strategy_stop` | 启动 / 停止策略 |
+| `cta_strategy_add_and_start` / `cta_strategy_delete` | 新增并启动 / 删除策略 |
 
 ## 大盘与板块和资金流向分析
 
 本技能支持对**不同交易市场**进行大盘走势、板块轮动和资金流向的综合分析。详细说明见 [docs/大盘与板块和资金流向分析/00\_index.md](docs/大盘与板块和资金流向分析/00_index.md)。
 
-所有市场的缓存 key 统一由 [00\_index.md 的市场子模块表格](docs/大盘与板块和资金流向分析/00_index.md#市场子模块) 定义，**不得自定义 key 格式或路径**。
+**报告读取方式**：分析结果由量化系统自动保存为分析报告，通过 vnpy_mcp 的 `cta_report_list` / `cta_report_get` 直接获取。
 
-| 市场类型 | 分析文档                                  | 缓存 key                    |
+| 市场类型 | 分析文档                                  | 报告名称（cta_report_get 参数） |
 | ---- | ------------------------------------- | ------------------------- |
-| 美股   | [美股市场](docs/大盘与板块和资金流向分析/美股市场.md)     | `/vnpy:美股:大盘与板块和资金流向分析`   |
-| 加密货币 | [加密货币市场](docs/大盘与板块和资金流向分析/加密货币市场.md) | `/vnpy:加密货币:大盘与板块和资金流向分析` |
-| 中国期货 | 待补充                                   | `/vnpy:中国期货:大盘与板块和资金流向分析` |
-| 中国A股 | 待补充                                   | `/vnpy:中国A股:大盘与板块和资金流向分析` |
-| 港股   | 待补充                                   | `/vnpy:港股:大盘与板块和资金流向分析`   |
-| 台股   | 待补充                                   | `/vnpy:台股:大盘与板块和资金流向分析`   |
-| 日股   | 待补充                                   | `/vnpy:日股:大盘与板块和资金流向分析`   |
+| 美股   | [美股市场](docs/大盘与板块和资金流向分析/美股市场.md)     | `美股大盘与板块和资金流向分析` |
+| 加密货币 | [加密货币市场](docs/大盘与板块和资金流向分析/加密货币市场.md) | `加密货币大盘与板块和资金流向分析` |
+| 中国期货 | 待补充                                   | 待确认 |
+| 中国A股 | 待补充                                   | 待确认 |
+| 港股   | 待补充                                   | 待确认 |
+| 台股   | 待补充                                   | 待确认 |
+| 日股   | 待补充                                   | 待确认 |
 
 ## 美股选股模块
 
 本技能支持对**美股市场**进行做多/做空选股分析，根据用户指定的 `direction` 参数自动路由：
 
-- **做多方向**：按照 [美股做多选择.md](docs/选股/美股做多选择.md) 中定义的选股逻辑，结合大盘环境，从候选股池中筛选符合「价值+成长混合（GARP）」策略的做多标的，输出评分卡和入场计划。
-- **做空方向**：按照 [美股做空选择.md](docs/选股/美股做空选择.md) 中定义的做空逻辑，结合大盘环境，在估值泡沫、基本面恶化或板块轮动过热的标的中筛选做空标的，输出评分卡和入场计划。
+- **做多方向**：按照 [美股做多选择.md](docs/美股选股/美股做多选择.md) 中定义的选股逻辑，结合大盘环境，从候选股池中筛选符合「价值+成长混合（GARP）」策略的做多标的，输出评分卡和入场计划。
+- **做空方向**：按照 [美股做空选择.md](docs/美股选股/美股做空选择.md) 中定义的做空逻辑，结合大盘环境，在估值泡沫、基本面恶化或板块轮动过热的标的中筛选做空标的，输出评分卡和入场计划。
 
-详细执行流程见 [docs/选股/00\_index.md](docs/选股/00_index.md)。
+详细执行流程见 [docs/美股选股/00\_index.md](docs/美股选股/00_index.md)。
 
-缓存 key：
-- 做多：`/vnpy:美股:做多选股分析结果`（24 小时过期）
-- 做空：`/vnpy:美股:做空选股分析结果`（24 小时过期）
+报告读取方式：选股结果由量化系统自动保存为分析报告，通过 vnpy_mcp `cta_report_get` 获取：
+- 做多：`cta_report_get(report_kind="美股做多选股结果")`
+- 做空：`cta_report_get(report_kind="美股做空选股结果")`
 
 ## vnpy整体持仓分析与风控
 
@@ -226,10 +229,10 @@ tiger-stock-strategy-analysis目录下应该有本SKILL.md，docs目录，script
 | `get_market_data.py`           | `pip install yfinance`                              | 获取结构化价格数据（含均线、52周百分位）                |
 | `get_market_data.py`           | `pip install requests beautifulsoup4 numpy`         | HTTP 请求、HTML 解析、数值计算（ATR/CCI/支撑压力位） |
 | `get_market_data.py`（calendar） | `pip install -U camoufox[geoip]` + `camoufox fetch` | 必须绕过 Cloudflare 获取 ForexFactory 经济日历 |
-| `stock_redis_query.py`         | `pip install requests`                              | 通过 Redis Proxy API 查询账户/策略信息          |
-| `vnpy_command.py`              | `pip install requests`                              | 通过 Redis Proxy API 发送命令（conid/close/publish 等） |
 | `test_get_market_data.py`      | `pip install pandas`                                | 测试脚本中构造模拟 DataFrame 数据                |
 | `tools.py`                     | （纯标准库，无需安装）                                       | JSON 文件读取工具函数                         |
+
+
 
 ***
 

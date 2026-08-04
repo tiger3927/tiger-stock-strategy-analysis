@@ -1,14 +1,13 @@
 """
-将美股选股池数据写入 Redis（公用 key: /vnpy:美股:板块选股池）
+校验美股选股池数据（stock_pool.json）
 
 用法:
-    E:\veighna_studio_43\python.exe skills/tiger-stock-strategy-analysis/scripts/sync_stock_pool_to_redis.py
+    E:\veighna_studio_43\python.exe skills/tiger-stock-strategy-analysis/scripts/sync_stock_pool.py
 
 原理:
     1. 读取同目录下的 stock_pool.json（选股池数据）
     2. 构建 ticker → GICS 反向索引
-    3. 验证 JSON 结构
-    4. 通过 Redis Proxy API 写入
+    3. 验证 JSON 结构并输出统计
 
 数据源:
     stock_pool.json — AI 直接修改此文件即可更新选股池，无需改 Python 代码
@@ -16,7 +15,6 @@
 import json
 import sys
 import os
-import requests
 
 # 数据文件路径（与脚本同目录）
 _DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stock_pool.json")
@@ -98,83 +96,24 @@ def validate_json(data: dict) -> list:
     return errors
 
 
-def write_to_redis(data: dict) -> bool:
-    """通过 Redis Proxy API 写入数据"""
-    # 从同目录的 setting.json 读取配置
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    sys.path.insert(0, script_dir)
-    try:
-        from tools import load_json
-    except ImportError:
-        setting_path = os.path.join(script_dir, "setting.json")
-        if not os.path.exists(setting_path):
-            print(f"❌ 找不到 setting.json: {setting_path}")
-            return False
-        with open(setting_path, "r", encoding="utf-8") as f:
-            settings = json.load(f)
-    else:
-        settings = load_json(os.path.join(script_dir, "setting.json"))
-
-    base_url = settings.get("http_redis_proxy_url", "https://ai4.newgoai.com/")
-    api_key = settings.get("http_redis_proxy_apikey", "nokey")
-    db = settings.get("http_redis_proxy_db", 11)
-
-    if not base_url.endswith("/"):
-        base_url += "/"
-
-    redis_key = "vnpy:美股:板块选股池"
-    json_str = json.dumps(data, ensure_ascii=False, indent=2)
-
-    url = f"{base_url}api/v1/redis/set"
-    headers = {
-        "Content-Type": "application/json",
-        "X-API-Key": api_key
-    }
-    payload = {
-        "key": redis_key,
-        "value": json_str,
-        "db": db,
-        "expire_seconds": None
-    }
-
-    print(f"写入 Redis...")
-    print(f"  Key:    {redis_key}")
-    print(f"  DB:     {db}")
-    print(f"  URL:    {url}")
-    print(f"  数据大小: {len(json_str)} 字符")
-
-    try:
-        resp = requests.post(url, headers=headers, json=payload, timeout=30)
-        result = resp.json()
-        if result.get("success"):
-            print(f"  ✅ 写入成功")
-            return True
-        else:
-            print(f"  ❌ 写入失败: {result}")
-            return False
-    except Exception as e:
-        print(f"  ❌ 请求异常: {e}")
-        return False
-
-
 def main():
     print("=" * 60)
-    print("美股选股池 → Redis 同步工具")
+    print("美股选股池数据校验工具")
     print("=" * 60)
 
     # 1. 加载数据
-    print(f"\n[1/4] 加载数据文件: {_DATA_FILE}")
+    print(f"\n[1/3] 加载数据文件: {_DATA_FILE}")
     data = load_data()
     print(f"  ✅ 加载成功")
 
     # 2. 构建 ticker 索引
-    print("\n[2/4] 构建 ticker 反向索引...")
+    print("\n[2/3] 构建 ticker 反向索引...")
     build_ticker_index(data)
     total_tickers = len(data["ticker_to_sub_sector"])
     print(f"  ✅ 共 {total_tickers} 个 ticker")
 
     # 3. 验证 JSON
-    print("\n[3/4] 验证 JSON 结构合理性...")
+    print("\n[3/3] 验证 JSON 结构合理性...")
     errors = validate_json(data)
     if errors:
         print(f"  ❌ 发现 {len(errors)} 个错误:")
@@ -183,7 +122,7 @@ def main():
         sys.exit(1)
     print(f"  ✅ 验证通过")
 
-    # 4. 统计信息
+    # 统计信息
     sub_sector_count = len(data["sub_sectors"])
     tier1_count = sum(
         len(info["tiers"]["T1"])
@@ -199,18 +138,9 @@ def main():
     print(f"  Tier 3 小盘:  动态更新")
     print(f"  总计:         {total_tickers} 只（不含动态 T3）")
 
-    # 5. 写入 Redis
-    print("\n[5/5] 写入 Redis...")
-    success = write_to_redis(data)
-    if success:
-        print("\n" + "=" * 60)
-        print("✅ 全部完成！选股池数据已写入 Redis")
-        print(f"   Key: /vnpy:美股:板块选股池")
-        print(f"   数据源: stock_pool.json")
-        print("=" * 60)
-    else:
-        print("\n❌ 写入失败")
-        sys.exit(1)
+    print("\n" + "=" * 60)
+    print("✅ 校验完成！选股池数据有效（数据源: stock_pool.json）")
+    print("=" * 60)
 
 
 if __name__ == "__main__":

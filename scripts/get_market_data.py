@@ -1183,6 +1183,11 @@ def fetch_economic_calendar():
         _script_dir = os.path.dirname(os.path.abspath(__file__))
         _user_data_dir = os.path.join(_script_dir, "temp", "browser_data")
 
+        # 若 10808 SOCKS5 代理可用则走代理，避免 IP 风控，否则直连
+        proxy_cfg = None
+        if _is_socks_proxy_available():
+            proxy_cfg = {"server": f"socks5://{_SOCKS5_ADDR}"}
+
         def _try_camoufox(headless: bool):
             """尝试用 Camoufox 抓取 ForexFactory 页面，成功返回 HTML，失败返回 None"""
             try:
@@ -1193,6 +1198,7 @@ def fetch_economic_calendar():
                     block_webrtc=True,
                     persistent_context=True,
                     user_data_dir=_user_data_dir,
+                    proxy=proxy_cfg,
                 ) as browser:
                     page = browser.new_page()
                     page.goto("https://www.forexfactory.com/calendar", timeout=60000)
