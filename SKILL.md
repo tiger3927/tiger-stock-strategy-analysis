@@ -1,6 +1,6 @@
 ---
 name: "tiger-stock-strategy-analysis"
-description: "股票量化策略分析工具：为 vnpy 量化软件提供策略分析和下单前审核。支持智能马丁格尔策略(openclaw-martin)、多信号权重评分趋势策略（Multi\_Signal\_Treand）；可通过 vnpy_mcp 查询量化系统的账户信息、策略执行信息与分析报告，并可向量化程序发送操作和查询指令（开平仓、调仓、行情查询等、查询盈透IBKR的conid）。无需 API key。以及，vnpy整体持仓分析与风控。"
+description: "股票量化策略分析工具：为 vnpy 量化软件提供策略分析和下单前审核。支持智能马丁格尔策略(openclaw-martin)、多信号权重评分趋势策略（Multi\_Signal\_Treand）；vnpy整体持仓分析与风控；大盘与板块和资金流向分析；做多做空选股；"
 ---
 
 # tiger-stock-strategy-analysis
