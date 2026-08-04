@@ -17,11 +17,10 @@
 
 | 前置条件       | 说明                                                                  |
 | ---------- | ------------------------------------------------------------------- |
-| 明确用户名      | 必须知道目标用户的 `userid`，用于报告标识和结果归属                                   |
 | 明确所在市场     | 必须知道目标用户的交易市场类型，否则无法分析大盘                                            |
 | 账户/策略查询 | 使用 **vnpy_mcp 工具**（实时数据），详见 [vnpy_mcp.md](../vnpy_mcp.md) |
 | 大盘与板块分析    | 通过 vnpy_mcp `cta_report_get` 读取大盘分析报告（量化系统自动保存），详见 [大盘与板块和资金流向分析](../大盘与板块和资金流向分析/00_index.md) |
-| 命令发送工具     | 使用 vnpy_mcp 操作工具（`cta_strategy_set_target_pos` / `cta_strategy_close` 等），详见 [vnpy-command-tool.md](../vnpy-command-tool.md) |
+| 命令发送工具     | 使用 vnpy_mcp 操作工具（`cta_strategy_set_target_pos` / `cta_strategy_close` 等），详见 [vnpy_mcp.md](../vnpy_mcp.md) |
 
 ***
 
@@ -55,7 +54,7 @@
 ### Step 1：获取市场分析结论
 
 根据用户交易的市场类型（美股、加密货币、中国期货、中国A股等），通过 vnpy_mcp `cta_report_get` 读取最新的大盘分析报告（如 `美股大盘与板块和资金流向分析`），详见 [大盘与板块和资金流向分析](../大盘与板块和资金流向分析/00_index.md)。
-（报告由量化系统自动保存，直接读取即可，无需重新执行分析流程；若报告不存在或过于陈旧，再执行分析流程）
+（报告由量化系统自动保存，直接读取即可，无需重新执行分析流程；若报告不存在或超过2个工作日，再执行分析流程）
 
 ### Step 2：账户整体风险评估
 
@@ -233,7 +232,6 @@ AI 必须按以下 JSON 格式返回结果：
 ```json
 {
     "analysis_time": "2025-01-01 10:00:00 UTC",
-    "userid": "tiger-code",
     "market_analysis": {
         "market_type": "美股",
         "大盘方向": "看多 / 看空 / 震荡",
@@ -285,7 +283,6 @@ AI 必须按以下 JSON 格式返回结果：
 | ----------- | ------------------------------------------------------------------------------------------------- |
 | 智能马丁格尔网格策略  | [Martingale-Grid-Trading-Strategy/00-Router.md](../Martingale-Grid-Trading-Strategy/00-Router.md) |
 | 多信号权重评分趋势策略 | [Multi\_Signal\_Treand\_Strategy.md](../Multi_Signal_Treand_Strategy.md)                          |
-| 智能短期趋势策略    | [Short-term-CCI-Trend-Strategy.md](../Short-term-CCI-Trend-Strategy.md)                           |
 
 **CTA 基类变量与参数参考**：
 

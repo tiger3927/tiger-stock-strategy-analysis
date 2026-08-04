@@ -1,6 +1,6 @@
 ---
 name: "tiger-stock-strategy-analysis"
-description: "股票量化策略分析工具：为 vnpy 量化软件提供策略分析和下单前审核。支持智能马丁格尔策略(openclaw-martin)、多信号权重评分趋势策略（Multi\_Signal\_Treand）、智能短期趋势策略(openclaw-trend)；可通过 vnpy_mcp 查询量化系统的账户信息、策略执行信息与分析报告，并可向量化程序发送操作和查询指令（开平仓、调仓、行情查询等、查询盈透IBKR的conid）。无需 API key。以及，vnpy整体持仓分析与风控。"
+description: "股票量化策略分析工具：为 vnpy 量化软件提供策略分析和下单前审核。支持智能马丁格尔策略(openclaw-martin)、多信号权重评分趋势策略（Multi\_Signal\_Treand）；可通过 vnpy_mcp 查询量化系统的账户信息、策略执行信息与分析报告，并可向量化程序发送操作和查询指令（开平仓、调仓、行情查询等、查询盈透IBKR的conid）。无需 API key。以及，vnpy整体持仓分析与风控。"
 ---
 
 # tiger-stock-strategy-analysis
@@ -188,18 +188,6 @@ web_search 使用 Tavily 引擎，每月限额 1000 次，超出后 web_search �
 具体见：
 
 [docs/Multi\_Signal\_Treand\_Strategy.md](docs/Multi_Signal_Treand_Strategy.md)
-
-### 智能短期趋势策略  (openclaw-trend)
-
-一种扩展的CTA趋势策略
-
-- **核心逻辑**: 结合技术指标判断短期走势
-- **买入信号**: 多头排列、成交量放大、突破关键位
-- **卖出信号**: 空头排列、跌破支撑、背离现象，或者指明此种策略的应用场景
-
-具体见：
-
-[docs/Short-term-CCI-Trend-Strategy.md](docs/Short-term-CCI-Trend-Strategy.md)
 
 ## CTA趋势策略基类说明
 
