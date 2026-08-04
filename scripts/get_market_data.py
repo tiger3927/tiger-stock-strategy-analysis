@@ -770,42 +770,98 @@ WEB_INDICATOR_QUERIES_TEMPLATE = {
 def fetch_ici_table(url: str) -> dict:
     """
     抓取 ICI 页面中的表格数据，提取 Equity 和 Total 行
+
+    使用 Camoufox 浏览器渲染（ICI 表格为 JS 动态加载，requests 拿不到且被 403 拦截）。
+    若本机 SOCKS5 代理(10808)可用，自动走代理，避免 IP 风控。
+
+    安装依赖：
+      pip install -U camoufox[geoip]
+      camoufox fetch
+
+    故障排查：
+      - ImportError: 未安装 camoufox，执行上面两条命令
+      - 返回 error: 页面结构变更或代理不可用，用浏览器 F12 检查实际 DOM
     """
+    now_utc = datetime.datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
     try:
-        resp = requests.get(url, timeout=15)
-        resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, "html.parser")
+        from camoufox.sync_api import Camoufox
+    except ImportError:
+        return {
+            "url": url,
+            "error": "camoufox 未安装，执行 pip install -U camoufox[geoip] && camoufox fetch",
+            "fetched_at": now_utc,
+        }
 
-        # 查找所有表格
-        tables = soup.find_all("table")
-        result = {"url": url, "fetched_at": datetime.datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "tables": []}
+    _script_dir = os.path.dirname(os.path.abspath(__file__))
+    _user_data_dir = os.path.join(_script_dir, "temp", "browser_data_ici")
 
-        for table_idx, table in enumerate(tables):
-            rows = table.find_all("tr")
-            table_data = []
-            headers = []
+    # 若 10808 SOCKS5 代理可用则走代理，否则直连
+    proxy_cfg = None
+    if _is_socks_proxy_available():
+        proxy_cfg = {"server": f"socks5://{_SOCKS5_ADDR}"}
 
-            # 提取表头
-            th_cells = rows[0].find_all(["th", "td"]) if rows else []
-            headers = [h.get_text(strip=True) for h in th_cells]
+    html_content = None
+    last_err = None
+    for headless in (True, False):
+        try:
+            with Camoufox(
+                headless=headless,
+                humanize=True,
+                geoip=True,
+                block_webrtc=True,
+                persistent_context=True,
+                user_data_dir=_user_data_dir,
+                proxy=proxy_cfg,
+            ) as browser:
+                page = browser.new_page()
+                page.goto(url, timeout=60000)
+                # 等待 JS 渲染出表格
+                page.wait_for_selector("table", timeout=30000)
+                page.wait_for_timeout(2000)
+                html_content = page.content()
+                break
+        except Exception as e:
+            last_err = e
+            continue
 
-            # 提取数据行
-            for row in rows[1:]:
-                cells = row.find_all(["td", "th"])
-                row_data = [c.get_text(strip=True) for c in cells]
-                if row_data:
-                    table_data.append(row_data)
+    if not html_content:
+        return {
+            "url": url,
+            "error": f"Camoufox 抓取失败: {last_err}",
+            "fetched_at": now_utc,
+        }
 
-            if headers or table_data:
-                result["tables"].append({
-                    "table_index": table_idx,
-                    "headers": headers,
-                    "rows": table_data,
-                })
+    soup = BeautifulSoup(html_content, "html.parser")
 
-        return result
-    except Exception as e:
-        return {"url": url, "error": str(e), "fetched_at": datetime.datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+    # 查找所有表格
+    tables = soup.find_all("table")
+    result = {"url": url, "fetched_at": now_utc, "tables": []}
+
+    for table_idx, table in enumerate(tables):
+        rows = table.find_all("tr")
+        table_data = []
+        headers = []
+
+        # 提取表头
+        th_cells = rows[0].find_all(["th", "td"]) if rows else []
+        headers = [h.get_text(strip=True) for h in th_cells]
+
+        # 提取数据行
+        for row in rows[1:]:
+            cells = row.find_all(["td", "th"])
+            row_data = [c.get_text(strip=True) for c in cells]
+            if row_data:
+                table_data.append(row_data)
+
+        if headers or table_data:
+            result["tables"].append({
+                "table_index": table_idx,
+                "headers": headers,
+                "rows": table_data,
+            })
+
+    return result
 
 
 def format_ici_output(data: dict, source_name: str = "") -> str:
