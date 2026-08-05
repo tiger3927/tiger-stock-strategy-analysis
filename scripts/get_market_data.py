@@ -53,6 +53,7 @@ from requests_cache import CachedSession
 from bs4 import BeautifulSoup
 import numpy as np
 import random
+import pickle
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -66,12 +67,28 @@ except ImportError:
 
 # ==================== 全局常量 ====================
 
+# ---------- 三层缓存架构（理解数据获取与缓存的关键） ----------
+# 1) 历史行情缓存（_HISTORY_CACHE_DIR，本次新增）:
+#    K线 DataFrame 文件缓存（.pkl），key = {ticker}_{period}，TTL 30 分钟。
+#    挂在 get_history_dataframe 统一出口，代理 / yfinance 两条路径都命中。
+#    目的: 多个策略在 30 分钟内先后拉取同一批次（如 us-all）时秒回，避免重复请求。
+# 2) info 元数据缓存（_INFO_CACHE_DIR，原有）:
+#    基本面元数据（名称/PE/市值/行业等）JSON 文件缓存，TTL 12 小时。
+#    变化慢，长缓存减少请求。
+# 3) requests_cache HTTP 缓存（_CACHE_DB，原有但此前未启用）:
+#    yfinance 回落路径的原始 HTTP 响应缓存（sqlite 持久化，跨进程复用）。
+#    仅当代理不可用、回落 yfinance 时才起作用。
+
 # requests_cache 持久缓存路径（固定到脚本所在目录）
 _CACHE_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "yf_cache_db")
 
 # yfinance info 数据文件缓存（info 无内置缓存，用文件缓存避免重复请求）
 _INFO_CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".yf_info_cache")
 _INFO_CACHE_TTL = 12 * 3600  # 12 小时
+
+# 历史行情 DataFrame 文件缓存（统一出口缓存，代理 / yfinance 路径均命中）
+_HISTORY_CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".yf_history_cache")
+_HISTORY_CACHE_TTL = 1800  # 30 分钟
 
 
 # ==================== 预设批次 ====================
@@ -428,19 +445,77 @@ def _fetch_chart_via_proxy(ticker: str, period: str) -> pd.DataFrame:
     raise RuntimeError(f"走代理获取 {ticker} 失败: {last_err}")
 
 
-def get_history_dataframe(ticker: str, period: str = "1y") -> pd.DataFrame:
+def _load_history_cache(ticker: str, period: str):
     """
-    统一历史数据入口：优先走代理（可用时），否则回落 yfinance。
+    读取历史行情文件缓存。
+
+    key = {ticker}_{period}（如 QQQ_1y.pkl），TTL = _HISTORY_CACHE_TTL（30 分钟）。
+    命中且未过期返回 DataFrame，否则返回 None（由 get_history_dataframe 重新拉取）。
+    缓存文件缺失 / 过期 / 损坏 / 读取异常，一律返回 None，保证不影响正常拉取流程。
+    """
+    try:
+        path = os.path.join(_HISTORY_CACHE_DIR, f"{ticker}_{period}.pkl")
+        if not os.path.exists(path):
+            return None
+        if time.time() - os.path.getmtime(path) > _HISTORY_CACHE_TTL:
+            return None
+        with open(path, "rb") as f:
+            return pickle.load(f)
+    except Exception:
+        return None
+
+
+def _save_history_cache(ticker: str, period: str, df: pd.DataFrame):
+    """
+    保存历史行情到文件缓存。
+
+    写入采用 tmp 文件 + os.replace 原子替换，避免多线程（fetch_batch 3 并发）
+    或多进程并发读写出错导致缓存文件损坏。
+    写入失败静默忽略，不影响主流程。
+    """
+    try:
+        os.makedirs(_HISTORY_CACHE_DIR, exist_ok=True)
+        path = os.path.join(_HISTORY_CACHE_DIR, f"{ticker}_{period}.pkl")
+        tmp = path + ".tmp"
+        with open(tmp, "wb") as f:
+            pickle.dump(df, f)
+        os.replace(tmp, path)
+    except Exception:
+        pass
+
+
+def get_history_dataframe(ticker: str, period: str = "1y", session=None) -> pd.DataFrame:
+    """
+    统一历史数据入口（带文件缓存）。
+
+    拉取顺序（缓存优先，逐级回落）:
+      1. 历史行情文件缓存命中（30 分钟 TTL）→ 直接返回，秒级响应
+      2. socks5 代理直调 Yahoo chart API（curl_cffi），结果写入缓存
+      3. 回落 yfinance 原生 history（可传 requests_cache CachedSession 复用 HTTP 缓存）
+
     返回与 yfinance history() 兼容的 DataFrame（列 Open/High/Low/Close/Volume）。
     失败抛异常。
     """
+    # 1. 文件缓存命中直接返回（多策略短时间重复拉同一批次时秒回）
+    cached = _load_history_cache(ticker, period)
+    if cached is not None and not cached.empty:
+        return cached
+
+    # 2. 优先走代理（可用时），结果写入缓存
     if _HAS_CURL_CFFI and _is_socks_proxy_available():
         try:
-            return _fetch_chart_via_proxy(ticker, period)
+            df = _fetch_chart_via_proxy(ticker, period)
+            if not df.empty:
+                _save_history_cache(ticker, period, df)
+            return df
         except Exception:
             pass  # 走代理失败，回落到 yfinance
-    # 回落：yfinance 原生（无代理）
-    return yf.Ticker(ticker).history(period=period)
+
+    # 3. 回落：yfinance 原生（可传 requests_cache CachedSession 复用 HTTP 缓存）
+    df = yf.Ticker(ticker).history(period=period, session=session)
+    if not df.empty:
+        _save_history_cache(ticker, period, df)
+    return df
 
 
 def safe_float(v, default=None):
@@ -541,7 +616,7 @@ def get_ticker_data(ticker: str, session: CachedSession = None) -> dict:
 
     Args:
         ticker: 股票代码
-        session: requests_cache CachedSession（可选），传入后自动缓存 12 小时
+        session: requests_cache CachedSession（可选），传入后 yfinance 历史行情 HTTP 响应自动缓存（TTL 由 fetch_batch 的 cache_ttl 控制）
 
     Returns:
         dict: {ticker, name, price, change, change_pct, ma_20, ma_50, ma_200,
@@ -553,7 +628,7 @@ def get_ticker_data(ticker: str, session: CachedSession = None) -> dict:
     for attempt in range(max_retries):
         try:
             stock = yf.Ticker(ticker)
-            hist = get_history_dataframe(ticker, "1y")
+            hist = get_history_dataframe(ticker, "1y", session=session)
             if hist.empty:
                 if attempt < max_retries - 1:
                     wait = (2 ** attempt) + random.uniform(0, 1)
@@ -655,27 +730,43 @@ def get_ticker_data(ticker: str, session: CachedSession = None) -> dict:
             time.sleep(wait)
 
 
-def _fetch_single(ticker, labels=None):
+def _fetch_single(ticker, labels=None, session=None):
     """线程池包装器：获取单个 ticker 数据并附加 label"""
-    data = get_ticker_data(ticker)
+    data = get_ticker_data(ticker, session=session)
     if labels and ticker in labels:
         data["label"] = labels[ticker]
     return data
 
 
-def fetch_batch(tickers: list, labels: dict = None) -> list:
+def fetch_batch(tickers: list, labels: dict = None, cache_ttl: int = 1800) -> list:
     """
-    批量获取 ticker 数据（带线程池 + 随机延迟）
+    批量获取 ticker 数据（带线程池 + 随机延迟）。
 
     3 并发线程 + 0.5-1.5s 随机间隔，降低 yfinance 限流概率。
-    info 数据通过 _get_info_cached 文件缓存（12 小时 TTL）。
+    缓存（三层架构详见文件头部全局常量区注释）:
+      - 历史行情 K 线 : get_history_dataframe 内文件缓存，TTL = _HISTORY_CACHE_TTL（30 分钟）
+      - info 元数据    : _get_info_cached 文件缓存，TTL = 12 小时
+      - yfinance HTTP : 本函数创建的 CachedSession（TTL = cache_ttl，默认 30 分钟，仅回落路径生效）
+    多个策略在缓存窗口内先后拉取同一批次时直接命中，避免重复请求。
+
+    Args:
+        tickers: 需要获取的 ticker 列表
+        labels: ticker → 中文名映射（可选），命中时附加到结果
+        cache_ttl: CachedSession 的 HTTP 缓存 TTL（秒），默认 1800（30 分钟）
     """
     if not tickers:
         return []
 
+    # requests_cache：sqlite 持久化缓存 yfinance 原始 HTTP 响应，跨进程复用
+    session = CachedSession(
+        cache_name=_CACHE_DB,
+        backend="sqlite",
+        expire_after=cache_ttl,
+    )
+
     results = []
     with ThreadPoolExecutor(max_workers=3) as executor:
-        futures = {executor.submit(_fetch_single, t, labels): t for t in tickers}
+        futures = {executor.submit(_fetch_single, t, labels, session): t for t in tickers}
         for future in as_completed(futures):
             data = future.result()
             results.append(data)
