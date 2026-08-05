@@ -39,3 +39,43 @@
 {加入分析结果存储位置}
 
 ```
+
+### 系统执行背景资料
+
+本系统由三层组件构成闭环 AI 交易体系，任何智能体复盘时都需要先理解这个架构：
+
+#### 组件说明
+
+| 组件 | 是什么 | 在系统中的角色 |
+|------|--------|--------------|
+| **vnpy** | 定制版量化交易框架（VeighNa Studio 4.3），通过 `run.py` 启动 | 策略执行引擎：按分钟线运行 CTA 策略，自动根据参数执行开仓/加仓/平仓等交易动作 |
+| **openclaw** | 部署在 vnpy 进程外的 AI 智能体（SSE 流式 API，地址 `localhost:11399`） | 分析决策大脑：加载 `tiger-stock-strategy-analysis` 技能，执行行情分析、策略判断，输出策略参数建议 |
+| **tiger-stock-strategy-analysis** | 本技能（即当前目录） | openclaw 的分析依据：提供大盘分析、选股、策略审核、持仓风控的完整文档和脚本 |
+| **vnpy_mcp** | vnpy 进程内启动的 MCP Server（`McpEngine`，端口 17471） | 外部接口：将 vnpy 的查询和操作能力暴露为 MCP 工具，供 openclaw 和 workbuddy/codex 调用 |
+
+#### 闭环数据流
+
+```mermaid
+graph TB
+    V["vnpy（量化引擎）<br/>├── CTA 策略按分钟线运行，自动执行交易<br/>├── McpEngine（vnpy_mcp）暴露 27 个 MCP 工具<br/>└── DataEngineHttp 管理定时分析任务调度"]
+
+    O["openclaw（AI 大脑）<br/>├── 加载本技能分析<br/>├── 输出策略参数建议<br/>└── 定时触发分析任务"]
+
+    W["workbuddy / codex（复盘）<br/>├── 通过 vnpy_mcp 拉取数据<br/>├── 分析策略执行好坏<br/>├── 回写策略参数 / 发交易命令<br/>└── 记录复盘结论"]
+
+    V -- "SSE 流式 API（定时调用）" --> O
+    V -- "MCP 协议" --> W
+    O -- "MCP 操作工具（下发参数）" --> V
+    W -- "MCP 操作工具（回写参数 / 交易命令）" --> V
+```
+
+#### 闭环工作流
+
+1. **定时分析**：vnpy 的 `DataEngineHttp` 按配置间隔（默认 1 小时）或 `macro_analyze.json` 时间计划，自动调用 openclaw 执行大盘分析、持仓风控等任务；
+2. **AI 分析决策**：openclaw 收到请求后，加载 `tiger-stock-strategy-analysis` 技能，通过 vnpy_mcp 获取账户/持仓/策略状态/报告等数据，结合技能文档中的分析框架，输出策略参数建议；
+3. **参数下发与执行**：openclaw 的分析结果通过 vnpy_mcp 的操作工具（如 `cta_strategy_set_parameters`、`cta_strategy_set_target_pos`）下发到 vnpy，vnpy 在策略参数控制下按分钟线自动执行交易；
+4. **人工复盘**：workbuddy / codex 通过 vnpy_mcp 连接 vnpy，以人工对话或定时任务方式拉取账户和策略数据，对交易和分析的好坏进行复盘，记录结论到 `复盘记录` 目录。
+
+#### 复盘的根本目的
+
+**通过 workbuddy / codex 实现人工与 AI 协作操盘，并通过复盘持续改进 `tiger-stock-strategy-analysis` 技能**--技能改进后，openclaw 的分析质量随之提升，vnpy 的交易行为随之优化，形成正向循环。
