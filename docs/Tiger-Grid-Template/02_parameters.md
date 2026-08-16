@@ -11,8 +11,6 @@
 | `init_load_days` | — | int | 5 | 策略需要历史行情的前置天数 |
 | `use_1m_5m_15m_30m_60m` | `主信号K线周期（分钟数）` | int | 15 | 主K线周期（1/5/15/30/60/240/720/1440） |
 | `us_stock_trading_hours_only` | — | bool | True | 是否仅在美股交易时段交易 |
-| `enable_publish_status_redis` | — | bool | True | 是否发布策略状态到 Redis |
-
 ---
 
 ## 二、交易资金相关
@@ -48,7 +46,6 @@
 | `loss_close_need_manual` | — | bool | False | 亏损平仓是否需要人工审批 |
 | `enable_stop_autoprofit` | `移动止盈开关` | bool | True | 允许盈利回撤移动止盈 |
 | `stop_autoprofit_start_radio` | `移动止盈启动幅度` | float | 0.05 | 盈利多少启动移动止盈（5%） |
-| `stop_autoprofit_back_radio` | — | float | 0.61 | 移动止盈回撤比例（盈利的61%） |
 | `stop_autoprofit_back_maxvalue` | `移动止盈回撤幅度` | float | 0.03 | 移动止盈回撤最大绝对值（3%） |
 
 ---

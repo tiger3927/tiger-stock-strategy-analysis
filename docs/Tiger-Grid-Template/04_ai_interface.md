@@ -67,7 +67,6 @@ max_position_ratio          = 1.0
 stop_profit_radio           = 0.09
 stop_loss_radio             = 0.03
 stop_autoprofit_start_radio = 0.05
-stop_autoprofit_back_radio  = 0.61
 stop_autoprofit_back_maxvalue = 0.02
 martin_grid_distance        = 0.02
 martin_grid_profit          = 0.02

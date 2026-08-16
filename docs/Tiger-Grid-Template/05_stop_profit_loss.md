@@ -92,5 +92,5 @@ ATR 系统使用**独立变量** `atr_stop_price` / `atr_profit_price`，不与 
 当盈利达到 `stop_autoprofit_start_radio`（默认 5%）后触发：
 
 - 记录从最高盈利回撤的幅度
-- 回撤超过 `stop_autoprofit_back_maxvalue`（如 3%）或 `stop_autoprofit_back_radio`（如 61% 比例），触发平仓
+- 回撤超过 `stop_autoprofit_back_maxvalue`（如 3%），触发平仓
 - 关键：做多时 low_stop_price 随盈利增加而**持续上移**，永不下移

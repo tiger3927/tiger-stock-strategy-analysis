@@ -11,6 +11,3 @@ def load_json(filename: str):
     # print(s)
     return json.loads(s)
 
-if __name__ == "__main__":
-    j=load_json("./scripts/setting.json")
-    print(j)

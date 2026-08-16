@@ -5,10 +5,9 @@
   1. 按市场类型获取预设数据批次
   2. 支持自定义 ticker 列表
   3. 输出结构化 JSON，含价格、涨跌幅、均线、52 周百分位
-  4. 支持缓存写入 Redis（可选）
-  5. --fetch-url product-all-info 获取单品种新闻+评级（替代 web_search）
-  6. --fetch-url calendar 获取全局经济日历（每小时 1 次，所有策略共享）
-  7. --fetch-url web-indicators 获取 14 项市场指标（OrioSearch，替代 AI web_search）
+  4. --fetch-url product-all-info 获取单品种新闻+评级（替代 web_search）
+  5. --fetch-url calendar 获取全局经济日历（每小时 1 次，所有策略共享）
+  6. --fetch-url web-indicators 获取 14 项市场指标（OrioSearch，替代 AI web_search）
 
 用法：
   python get_market_data.py --market us_stocks --batch us-major-indices

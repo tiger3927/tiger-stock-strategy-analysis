@@ -17,6 +17,18 @@ description: "股票量化策略分析工具：为 vnpy 量化软件提供策略
 [scripts/vt\_symbol\_info.json](scripts/vt_symbol_info.json)
 如果上述文档中不包含，可通过 vnpy_mcp 的 `search_vt_symbol` / `get_contract` 工具实时查询。
 
+### 品种缺失 / conid 变化的修复
+
+策略信息中的 vt_symbol（如 265598.SMART / ETHUSDT_SWAP_BINANCE.GLOBAL）在品种表中查不到，或盈透IB交易所的 conid 已变化时：
+
+1. 用 vnpy_mcp `search_vt_symbol` 按 conid / ticker 查询真实品种信息（返回 ticker、名称、交易所等）
+2. 用 `get_contract` 获取合约详情，确认 conid 是否已变化
+3. 若 vnpy_mcp 查不到，可用 `scripts/get_market_data.py`（yfinance）验证 ticker 有效性
+4. 将最新信息补录/修复到 [scripts/vt_symbol_info.json](scripts/vt_symbol_info.json)（字段：name、name_cn、ticker、conid、category、industry、priority）
+5. 未补录/未修复前，不得对该品种做开仓分析与下单
+
+工具具体参数见 [docs/vnpy_mcp.md](docs/vnpy_mcp.md) 第 7 节「行情与合约」。
+
 ## 信息获取方法（缓存优先 + 增量更新）
 
 ### 尽量用如下外部技能获取股票的信息
