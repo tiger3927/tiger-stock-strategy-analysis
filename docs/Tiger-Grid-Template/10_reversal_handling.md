@@ -1,7 +1,7 @@
 # 10 — 变盘逆势：如何应对持仓方向与大盘趋势相反
 
 > 当持仓方向与大盘/个股趋势出现背离时，基类多层防御机制如何配合、参数如何调整。
-> 对照代码：`strategies/tiger_grid_template.py` 中 `martin_add_sub()` / `profit_loss_stop_action()` / `set_target_pos()` / `loss_close_need_manual`。
+> 对照代码：`strategies/tiger_grid_template.py` 中 `martin_add_sub()` / `profit_loss_stop_action()` / `set_target_pos()`。
 
 ---
 
@@ -21,9 +21,9 @@
 ```
 变盘发生
   │
-  ├── [T+0, 信号层] 子类/主信号检测（最快）
+  ├── [T+0, 信号层] 策略主信号检测（最快）
   │     均线交叉、ADX衰减、ATR突变、EMA下穿 → 直接 set_target_pos(0)
-  │     ⚠️ 若 loss_close_need_manual=True 且亏损，平仓被拦截
+  │     ⚠️ 亏损时，平仓可能被"人工作业层介入"拦截（人工设置 loss_close_need_manual=True，智能体不处理）
   │
   ├── [T+0~数分钟, tick 级] profit_loss_stop_action()
   │     ATR 动态止损 / 固定止损 / 移动止盈 / ATR 动态止盈
@@ -36,16 +36,16 @@
   ├── [T+数分钟, bar 级] AI 分析周期（若 enable_openclaw_analysis=True）
   │     AI 感知方向背离 → 返回 target_pos=0 或反向
   │
-  └── [T+数分钟, bar 级] 子类 on_bar() 定期检查
+  └── [T+数分钟, bar 级] 策略代码定期检查
         自定义指标值变化 → set_target_pos()
 ```
 
 **关键认识：**
 
-- **最快**是子类自身信号，不需要等 CCI 穿越
+- **最快**是策略自身信号，不需要等 CCI 穿越
 - **CCI 减仓是"自动化的主动防御"**，不需要 AI，适合懒人挂机
 - **止损是最后的被动防线**，不是进攻手段
-- **loss_close_need_manual** 可能切断前两条路，务必谨慎
+- **人工作业层介入**（`loss_close_need_manual`，人工设置）可能切断亏损状态下的全部平仓路径，智能体无法设置或绕过
 
 ---
 
@@ -53,15 +53,17 @@
 
 ### CCI 方向判断原理
 
-`get_martin_chance()` 调用 `numba_cci_100_back()`（[tiger_Indicators.py](file:///d:/Code/Python/Trading/vnpy_test/tools/tiger_Indicators.py#L7-L21)）：
+`get_martin_chance()` 调用 `cci_100_back()`（[tiger_Indicators.py](file:///d:/Code/Python/Trading/vnpy_test/tools/tiger_Indicators.py#L7-L25)），在最近 `target_delay_minute_max`（默认 3）根 bar 内，从最新往回扫 CCI ±100 穿越信号：
 
 ```
-在最近 period（默认120）根bar中，从最新往回扫：
-  若 CCI[i-1] >= 100 且 CCI[i] < 100  → direction = -1（CCI向下穿越100）
-  若 CCI[i] > -100 且 CCI[i-1] >= -100 → direction = 1（CCI向上穿越-100）
+若 CCI[i-1] >= 100 且 CCI[i] < 100   → direction = -1（CCI向下穿越100）
+若 CCI[i-1] <= -100 且 CCI[i] > -100 → direction = 1（CCI向上穿越-100）
+扫不到穿越信号 → direction = 0（不触发减仓）
 ```
 
-然后在 `martin_add_sub()` 中（[src](file:///d:/Code/Python/Trading/vnpy_test/strategies/tiger_grid_template.py#L3435-L3483)）：
+注意：CCI 指标周期是 `cci_martin_period`（默认 35），在网格 K 线周期（`martin_k_time`）上计算；上面的扫描窗口是 `target_delay_minute_max` 根 bar，两者不是同一个参数。
+
+然后在 `martin_add_sub()` 中（[src](file:///d:/Code/Python/Trading/vnpy_test/strategies/tiger_grid_template.py#L4444-L4604)）：
 
 ```
 if direction × pos < 0:      ← CCI方向与持仓方向相反
@@ -76,7 +78,7 @@ if direction × pos < 0:      ← CCI方向与持仓方向相反
 | **CCI 滞后性** | CCI 需要跌穿 100 线才发出方向信号，此时价格可能已跌了不止3% | 减仓触发时亏损可能已超过止损线 |
 | **微利时无法减基础底仓** | 减基础底仓要求 `盈利 > martin_grid_profit`（默认3%） | 若开仓后微利1%~2%即反转，CCI方向已反但基础底仓不减 |
 | **网格减仓被全局关闭** | `enable_martin_sub=False` 时，所有网格减仓被禁止（无论盈亏） | 仓位无法通过 CCI 减仓主动降低，只能硬扛到止损 |
-| **loss_close_need_manual 阻断** | 所有平仓/减仓动作最终调用 `set_target_pos()`，亏损平仓被拦截 | 只能硬扛到止损触发 |
+| **人工作业层介入** | 所有平仓/减仓动作最终调用 `set_target_pos()`，`loss_close_need_manual=True`（人工设置）时亏损平仓被拦截（智能体不可设置/绕过） | 只能由人工将其关闭或人工处理 |
 
 ---
 
@@ -86,13 +88,13 @@ if direction × pos < 0:      ← CCI方向与持仓方向相反
 
 | 你的态度 | 关键设置 | 效果 |
 |:--|:--|:--|
-| **宁可少赚也要保本** | `loss_close_need_manual=False` + `enable_martin_sub=True` | CCI反转时果断减仓，不犹豫 |
-| **网格定投、相信反转会回来** | `enable_martin_sub=False` + `loss_close_need_manual=True` | CCI反转不卖，亏损也不人工确认（被动等待止损或反弹） |
-| **让止损决定一切** | 仅 `enable_stop_loss=True`，其他子类信号处理 | 简单粗暴，适合信号很准的策略 |
+| **宁可少赚也要保本** | `enable_martin_sub=True`（并确保 `loss_close_need_manual=False`，人工设置） | CCI反转时果断减仓，不犹豫 |
+| **网格定投、相信反转会回来** | `enable_martin_sub=False`（人工可将 `loss_close_need_manual` 设为 True，扛住亏损不自动平） | CCI反转不卖（被动等待止损或反弹） |
+| **让止损决定一切** | 仅 `enable_stop_loss=True`，其他靠策略信号处理 | 简单粗暴，适合信号很准的策略 |
 
 ### 核心场景 1：趋势追踪变盘（做多 → 趋势转空，立即平仓）
 
-**参数策略：完全信任子类信号，CCI减仓当补充**
+**参数策略：完全信任策略信号，CCI减仓当补充**
 
 ```json
 {
@@ -116,15 +118,14 @@ if direction × pos < 0:      ← CCI方向与持仓方向相反
     "martin_grid_profit": 0.01,
     "martin_sub_part": 1.0,
     "enable_martin_add_open": false,
-    "first_part": 0.2,
-    "max_position_ratio": 1.0
+    "first_part": 0.2
   }
 }
 ```
 
 **为什么这样设：**
 
-- `loss_close_need_manual=False`：不拦平仓（**最重要**，趋势反转时不犹豫）
+- **前置确认**：`loss_close_need_manual` 需为 False（人工作业层介入关闭；人工设置，智能体无法修改），否则亏损平仓会被拦截
 - `martin_sub_part=1.0`：CCI确认反向后一次全部减仓（不保留底仓）
 - `martin_grid_profit=0.01`：降低基础底仓减仓门槛，微利也减
 - `enable_martin_sub=True`：允许减网格仓（防止越陷越深）
@@ -156,8 +157,7 @@ if direction × pos < 0:      ← CCI方向与持仓方向相反
     "martin_grid_profit": 0.00,
     "martin_sub_part": 1.0,
     "enable_martin_add_open": false,
-    "first_part": 0.2,
-    "max_position_ratio": 1.0
+    "first_part": 0.2
   }
 }
 ```
@@ -194,8 +194,7 @@ if direction × pos < 0:      ← CCI方向与持仓方向相反
     "enable_martin_sub": false,
     "martin_grid_profit": 0.02,
     "martin_sub_part": 0.33,
-    "first_part": 0.2,
-    "max_position_ratio": 0.2
+    "first_part": 0.2
   }
 }
 ```
@@ -203,47 +202,31 @@ if direction × pos < 0:      ← CCI方向与持仓方向相反
 **为什么这样设：**
 
 - `target_pos=20`：主动降低到20%仓位（原有的100股减到20股）
-- `max_position_ratio=0.2`：限制未来加仓上限
 - `enable_martin_sub=False`：网格仓不急于减（还给盈利空间）
 - `stop_autoprofit_start_radio=0.03` + `back_maxvalue=0.01`：极敏感的移动止盈，回撤1%就跑
 - `enable_martin_add_loss=False`：禁止继续摊平
 
 ---
 
-## 五、`loss_close_need_manual` 的变盘场景陷阱
+## 五、人工作业层介入（loss_close_need_manual）的变盘盲区
 
-### 参数定义
+策略代码内置一道**人工层硬约束**——参数 `loss_close_need_manual`（人工作业层控制参数，智能体不可设置、不可复位，见 02 文档第七节）：人工将其设为 True 后，亏损状态下**一切**平仓路径（止损平仓、CCI 减仓、信号平仓，即所有 `set_target_pos(0)` 路径）都会被拦截，只有人工操作（`manual=True`）可以执行平仓。
 
-| 参数 | 默认值 | 含义 |
-|:--|:--|:--|
-| `loss_close_need_manual` | `False` | 亏损时调用 `set_target_pos(0)` 是否需要人工审批 |
-
-源码逻辑（[tiger_grid_template.py](file:///d:/Code/Python/Trading/vnpy_test/strategies/tiger_grid_template.py#L2860-L2864)）：
-
-```python
-if self.loss_close_need_manual and not manual:
-    if self.pos != 0 and self.current_profit_loss_radio < 0:
-        if target_pos_calcover == 0:
-            print("当前设置，人工审核亏损情况的平仓行为！")
-            return   # ← 直接拦截！
-```
-
-### 变盘时的影响
+它的设计意图是**人为扛住极端行情/巨大亏损**——防止智能体或程序在恐慌中自动平掉网格介入的大仓位，是刻意的"抗巨大亏损"选择。
 
 | `loss_close_need_manual` | 变盘时行为 |
 |:--|:--|
-| `True` | ⚠️ 子类信号平仓 → **被拦**；CCI减仓 → **被拦**；止损平仓（`set_target_pos(0)`）→ **也被拦**。只能外部手动操作。 |
-| `False`（默认） | ✅ 所有平仓路径畅通，三层防御正常工作 |
+| `True`（人工开启介入） | ⚠️ 全部自动平仓路径被拦，智能体观察到的现象是"调仓目标未生效" |
+| `False`（默认，介入关闭） | ✅ 所有平仓路径畅通，各层防御正常工作 |
 
-### 建议
-
-> **变盘场景下必须设置 `loss_close_need_manual=False`**。这个参数是为"防止AI误判卖飞网格大仓位"设计的保护性开关，适合**震荡行情**——趋势反转时反而是障碍。
+> **智能体的正确行为：** 观察到"亏损状态下平仓未生效"时，不要反复重试 `set_target_pos(0)`，也不要尝试绕过——应判断为人工作业层介入，向人工汇报并等待指令。
+> **人的决策：** 变盘（趋势反转）场景下应由人工将 `loss_close_need_manual` 设为 False，否则各层自动防御全部失效；震荡行情中则适合保持 True。
 
 ---
 
-## 六、子类自行检测方向背离的最佳实践
+## 六、方向背离检测的信号参考（供智能体自身分析用）
 
-基类的 CCI 减仓是被动兜底，**子类应该主动检测方向背离**。
+基类的 CCI 减仓是被动兜底。智能体在自己的分析中应关注以下方向背离信号，确认背离后可给出平仓/减仓建议（仍经 01/07 的落地与风控链路执行）：
 
 ### 可检测的信号
 
@@ -256,38 +239,7 @@ if self.loss_close_need_manual and not manual:
 | 成交量异常 | 放量下跌 > 平均成交量 2 倍 | 恐慌抛售，趋势逆转 |
 | CCI 提前预警 | CCI 从 +200 跌到 +50（尚未跌破 100） | 动量骤减，趋势可能终结 |
 
-### 推荐的子类实现骨架
-
-```python
-def on_bar(self, bar: BarData):
-    super().on_bar(bar)
-
-    if self.pos == 0:
-        return
-
-    reversal = self._detect_reversal()
-    if reversal:
-        self.reset_ai_strategy_params()
-        self.enable_stop_loss = True
-        self.stop_loss_radio = 0.03
-        self.loss_close_need_manual = False  # 关键：允许平仓
-        self.enable_martin_sub_base = True
-        self.enable_martin_sub = True
-        self.set_target_pos(0, comment="子类检测方向背离，平仓")
-
-def _detect_reversal(self):
-    """子类应根据自身策略信号实现 """
-    if self.pos > 0:
-        # 做多转空示例
-        ema_dead_cross = self.ema_fast[-1] < self.ema_slow[-1]
-        cci_dropping = self.cci[-1] < 50 and self.cci[-2] > 100
-        adx_weakening = self.adx[-1] < 20
-        return ema_dead_cross or (cci_dropping and adx_weakening)
-    else:
-        # 做空转多... 对称逻辑
-        pass
-    return False
-```
+> 提醒：检测出背离并不保证立即平仓——亏损状态下若人工作业层介入（`loss_close_need_manual=True`）开启，平仓会被拦截，此时应向人工汇报并等待指令（见本文第五节）。
 
 ---
 
@@ -295,7 +247,7 @@ def _detect_reversal(self):
 
 | 参数 | 变盘建议值 | 说明 |
 |:--|:--|:--|
-| `loss_close_need_manual` | `False` | ⭐ 最关键：不拦平仓 |
+| `loss_close_need_manual` | `False`（关闭介入） | ⭐ 最关键：不拦平仓；人工作业层控制参数，智能体无法设置，需人工确认 |
 | `enable_stop_loss` | `True` | 最后兜底 |
 | `stop_loss_radio` | `0.03` ~ `0.05` | 网格仓位多则放宽 |
 | `enable_martin_add_loss` | `False` | 停止抄底 |
@@ -304,7 +256,6 @@ def _detect_reversal(self):
 | `enable_martin_sub` | `True` | CCI反向时减网格仓 |
 | `martin_grid_profit` | `0.00` ~ `0.01` | 降低减仓盈利门槛 |
 | `martin_sub_part` | `0.33` ~ `1.0` | 减仓比例（1.0=全部） |
-| `max_position_ratio` | 当前占比或更低 | 限制后续重新加仓 |
 | `target_pos` | `0` 或 `当前×30%` | 平仓或大幅缩仓 |
 
 ---
@@ -315,6 +266,6 @@ def _detect_reversal(self):
 |:--|:--|
 | [`05_stop_profit_loss.md`](05_stop_profit_loss.md) | 止损平仓的触发价格和运行节奏（本文第一层防御） |
 | [`06_grid_martin.md`](06_grid_martin.md) | CCI 减仓的完整四段逻辑（本文第二层防御） |
-| [`07_trade_control.md`](07_trade_control.md) | `set_target_pos()` 风控链，含 `loss_close_need_manual` 拦截 |
+| [`07_trade_control.md`](07_trade_control.md) | `set_target_pos()` 风控链，含人工作业层介入（loss_close_need_manual）拦截 |
 | [`04_ai_interface.md`](04_ai_interface.md) | AI 返回 JSON 的 `parameters` 字段可填参数 |
 | [`09_scenarios.md`](09_scenarios.md) | 场景 2（震荡→破位）、场景 5（保守防守）与本主题有交集 |

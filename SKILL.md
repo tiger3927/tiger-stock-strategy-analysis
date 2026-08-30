@@ -172,13 +172,31 @@ web\_search 使用 Tavily 引擎，每月限额 1000 次，超出后 web\_search
 
 具体见：
 
-[docs/Multi\_Signal\_Treand\_Strategy.md](docs/Multi_Signal_Treand_Strategy.md)
+[docs/Multi\_Signal\_Treand\_Strategy/Multi\_Signal\_Treand\_Strategy.md](docs/Multi_Signal_Treand_Strategy/Multi_Signal_Treand_Strategy.md)
 
-## CTA趋势策略基类说明
+## TigerGridTemplate CTA类策略的基类文档（CTA策略的参数驾驭手册）
 
-一般无需深入了解基类原理；若确需查阅，入口文档如下：
+> 上面两类策略均继承自 `TigerGridTemplate` 基类。
+> 该文档集（docs/Tiger-Grid-Template/）的唯一视角：**写给智能体的"通过参数设置驾驭策略代码"手册**
+> ——只写"设了参数后会发生什么"（触发条件/量公式/风控拦截/参数联动），不含写策略代码与内部工艺。
+> 入口：[00\_index.md](docs/Tiger-Grid-Template/00_index.md)（先读它确定加载哪些子文档）。
 
-- [tiger\_grid\_template 策略基类文档](docs/Tiger-Grid-Template/00_index.md)
+| 子文档 | 内容 | 何时查 |
+|:--|:--|:--|
+| 02 | 48 个参数（47 智能体体系 + 1 人工作业层控制）+ 标准名 + 可改性 | 查参数含义、哪些参数 AI 能改 |
+| 03 | 13 个运行时变量 + 状态字典上报内容 | 查变量含义、读状态上报 |
+| 04 | AI 返回 JSON 约定 + 分层复位语义 + 订单审核协议 | 返回 AI JSON / 订单审核时 |
+| 05 | 止盈止损三系统（固定/ATR/移动止盈） | 问止盈止损怎么触发 |
+| 06 | 网格加减仓四段逻辑 | 问网格怎么加减仓 |
+| 07 | 交易量公式 + 下单风控链 | 问下单风控、每笔量怎么算 |
+| 08 | 行为规则与坑点速查 | 理解行为、查坑点 |
+| 09 | 典型场景的完整 JSON 参数配置 | 问"震荡/趋势该设什么参数" |
+| 10 | 变盘逆势应对（5 层防御 + 背离信号参考） | 问"大盘方向变了怎么办" |
+
+**要点：**
+- 参数"标准名"（代码 name_cn）是 AI JSON 与状态上报的标准中文键名，勿用其他叫法；
+- 人工作业层控制参数（`loss_close_need_manual`、`enable_openclaw_analysis`、`openclaw_main_interval`、`enable_openclaw_confirm_target_pos`）智能体**不可设置**，只需理解其效果（见 02 第七节）；
+- 参数组合可配置出多种策略形态（一次性建仓/纯网格/纯趋势/盈利加仓进攻/变盘防御等，见 00 第五节）。
 
 ## 输出
 

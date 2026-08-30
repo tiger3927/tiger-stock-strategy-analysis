@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TK 量化交易系统（Token KeyTrader）· 系统介绍与操作指南</title>
+<style>
+:root{
+  --bg:#0a0e17; --bg2:#111827; --card:#151d2e; --card2:#1a2338;
+  --line:#26324a; --line2:#33405e;
+  --txt:#e5eaf3; --sub:#94a3b8; --dim:#64748b;
+  --blue:#3b82f6; --cyan:#22d3ee; --teal:#10b981; --amber:#f59e0b; --red:#ef4444; --purple:#8b5cf6; --pink:#ec4899;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+/* 只给 html 加 overflow-x：加在 body 上会让 body 变成滚动容器，
+   破坏 .topbar 的 position:sticky（手机模式下滚动后吸顶栏会消失） */
+html{overflow-x:hidden;scroll-behavior:smooth}
+body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.7;font-size:15px}
+a{color:var(--cyan);text-decoration:none}
+
+/* ===== 侧边导航 ===== */
+.sidebar{position:fixed;left:0;top:0;bottom:0;width:232px;background:var(--bg2);border-right:1px solid var(--line);padding:24px 0;overflow-y:auto;z-index:50}
+.sidebar .logo{position:relative;padding:0 22px 18px;border-bottom:1px solid var(--line);margin-bottom:14px}
+.drawer-close{display:none;position:absolute;top:16px;right:16px;width:32px;height:32px;border-radius:8px;background:var(--card);border:1px solid var(--line2);color:var(--sub);font-size:14px;cursor:pointer;line-height:1}
+.drawer-close:hover{color:var(--txt);border-color:var(--cyan)}
+.sidebar .logo .dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--teal);box-shadow:0 0 12px var(--teal);margin-right:8px;vertical-align:middle}
+.sidebar .logo b{font-size:15px;letter-spacing:.5px}
+.sidebar .logo small{display:block;color:var(--dim);font-size:11px;margin-top:4px}
+.sidebar nav a{display:flex;align-items:center;gap:10px;padding:9px 22px;color:var(--sub);font-size:13.5px;border-left:2px solid transparent;transition:.15s}
+.sidebar nav a:hover{color:var(--txt);background:rgba(59,130,246,.08)}
+.sidebar nav a.on{color:var(--cyan);border-left-color:var(--cyan);background:rgba(34,211,238,.06)}
+.sidebar nav a .n{width:22px;height:22px;border-radius:6px;background:var(--card);border:1px solid var(--line2);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--dim);flex-shrink:0}
+.sidebar nav a.on .n{background:rgba(34,211,238,.15);border-color:var(--cyan);color:var(--cyan)}
+
+/* ===== 主区 ===== */
+.main{margin-left:232px;padding:0 48px 80px;max-width:1080px}
+section{padding:56px 0 12px;scroll-margin-top:20px}
+.sec-tag{display:inline-block;font-size:11.5px;letter-spacing:2px;color:var(--cyan);background:rgba(34,211,238,.08);border:1px solid rgba(34,211,238,.25);padding:3px 12px;border-radius:99px;margin-bottom:12px}
+h2{font-size:26px;font-weight:700;margin-bottom:8px;letter-spacing:.3px}
+.sec-desc{color:var(--sub);font-size:14.5px;margin-bottom:28px;max-width:760px}
+h3{font-size:17px;font-weight:600;margin:26px 0 12px;color:var(--txt)}
+.sub3{color:var(--sub);font-size:13px;margin:-6px 0 14px}
+
+/* ===== 卡片 ===== */
+.grid{display:grid;gap:14px}
+.grid>*{min-width:0}
+.g3{grid-template-columns:repeat(3,1fr)}
+.g2{grid-template-columns:repeat(2,1fr)}
+.g4{grid-template-columns:repeat(4,1fr)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;transition:.18s}
+.card:hover{border-color:var(--line2);transform:translateY(-2px)}
+.card .ic{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;margin-bottom:10px}
+.card h4{font-size:15px;margin-bottom:6px}
+.card p{font-size:13px;color:var(--sub)}
+.b-blue{background:rgba(59,130,246,.15)} .b-cyan{background:rgba(34,211,238,.13)} .b-teal{background:rgba(16,185,129,.14)}
+.b-amber{background:rgba(245,158,11,.14)} .b-red{background:rgba(239,68,68,.13)} .b-purple{background:rgba(139,92,246,.14)} .b-pink{background:rgba(236,72,153,.13)}
+
+/* ===== 表格 ===== */
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:560px}
+th{background:var(--card2);color:var(--sub);font-weight:600;text-align:left;padding:11px 16px;font-size:12.5px;letter-spacing:.4px;border-bottom:1px solid var(--line2)}
+td{padding:11px 16px;border-bottom:1px solid var(--line);color:var(--sub);vertical-align:top}
+tr:last-child td{border-bottom:none}
+td b,td strong{color:var(--txt)}
+td .mono{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--cyan);background:rgba(34,211,238,.07);padding:1px 6px;border-radius:4px;white-space:nowrap}
+
+/* ===== 代码块 ===== */
+pre{background:#0d1424;border:1px solid var(--line);border-radius:10px;padding:16px 18px;overflow-x:auto;font-size:12.5px;line-height:1.7;color:#c9d6ee;font-family:ui-monospace,Consolas,monospace}
+pre .c{color:#5b6b8c} pre .k{color:#7dd3fc} pre .s{color:#86efac} pre .f{color:#f0abfc} pre .n{color:#fdba74}
+code{font-family:ui-monospace,Consolas,monospace}
+
+/* ===== 步骤 / 时间线 ===== */
+.steps{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
+.steps>.step{min-width:0}
+.step{flex:1;min-width:150px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;position:relative}
+.step .no{position:absolute;top:-9px;left:14px;font-size:10.5px;font-weight:700;color:var(--bg);background:var(--cyan);padding:1px 8px;border-radius:99px}
+.step h5{font-size:13.5px;margin-bottom:4px}
+.step p{font-size:12px;color:var(--sub)}
+
+/* ===== 技法卡片 ===== */
+.tech{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:18px 0}
+.tech .t{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;cursor:pointer;transition:.18s;position:relative}
+.tech .t:hover{border-color:var(--cyan);transform:translateY(-3px)}
+.tech .t .big{font-size:22px;font-weight:800;background:linear-gradient(135deg,var(--cyan),var(--blue));-webkit-background-clip:text;background-clip:text;color:transparent}
+.tech .t h5{font-size:13.5px;margin:6px 0 3px}
+.tech .t p{font-size:11.5px;color:var(--dim)}
+.tech .t .tag{position:absolute;top:10px;right:12px;font-size:10px;color:var(--dim)}
+
+/* ===== 架构图 ===== */
+.arch{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:26px;margin:16px 0}
+.layer{border-radius:12px;padding:16px 20px;margin-bottom:14px;position:relative;border:1px solid}
+.layer:last-child{margin-bottom:0}
+.layer .name{font-size:14.5px;font-weight:700;margin-bottom:4px}
+.layer .role{font-size:12px;color:var(--sub);margin-bottom:8px}
+.layer .items{display:flex;gap:8px;flex-wrap:wrap}
+.layer .chip{font-size:11.5px;padding:4px 11px;border-radius:99px;border:1px solid}
+.l1{background:rgba(59,130,246,.07);border-color:rgba(59,130,246,.35)}
+.l1 .name{color:#93c5fd}.l1 .chip{border-color:rgba(59,130,246,.4);color:#bfdbfe;background:rgba(59,130,246,.12)}
+.l2{background:rgba(16,185,129,.07);border-color:rgba(16,185,129,.35)}
+.l2 .name{color:#6ee7b7}.l2 .chip{border-color:rgba(16,185,129,.4);color:#a7f3d0;background:rgba(16,185,129,.12)}
+.l3{background:rgba(139,92,246,.07);border-color:rgba(139,92,246,.35)}
+.l3 .name{color:#c4b5fd}.l3 .chip{border-color:rgba(139,92,246,.4);color:#ddd6fe;background:rgba(139,92,246,.12)}
+.flow-arrow{text-align:center;color:var(--dim);font-size:18px;margin:-4px 0 0}
+
+/* ===== 闭环 ===== */
+.loop{display:grid;grid-template-columns:repeat(4,1fr);gap:0;align-items:center;margin:22px 0}
+.loop .node{background:var(--card);border:1px solid var(--line2);border-radius:12px;padding:14px 12px;text-align:center}
+.loop .node b{display:block;font-size:13.5px;margin-bottom:3px}
+.loop .node span{font-size:11.5px;color:var(--dim)}
+.loop .arr{color:var(--dim);text-align:center;font-size:16px}
+
+/* ===== FAQ ===== */
+.faq{border:1px solid var(--line);border-radius:10px;margin-bottom:10px;overflow:hidden;background:var(--card)}
+.faq .q{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;cursor:pointer;font-size:14px;font-weight:500;color:var(--txt)}
+.faq .q .pm{color:var(--cyan);font-size:16px;transition:.2s}
+.faq .a{padding:0 18px;max-height:0;overflow:hidden;transition:max-height .3s ease;color:var(--sub);font-size:13.5px}
+.faq.open .a{max-height:300px;padding:0 18px 16px}
+.faq.open .pm{transform:rotate(45deg)}
+
+/* ===== 高亮标签 ===== */
+.pill{display:inline-block;font-size:11px;padding:2px 9px;border-radius:99px;margin-right:6px;font-weight:600}
+.p-p0{background:rgba(239,68,68,.15);color:#fca5a5;border:1px solid rgba(239,68,68,.35)}
+.p-p1{background:rgba(245,158,11,.14);color:#fcd34d;border:1px solid rgba(245,158,11,.32)}
+.p-p2{background:rgba(148,163,184,.12);color:#cbd5e1;border:1px solid rgba(148,163,184,.3)}
+.p-ok{background:rgba(16,185,129,.14);color:#6ee7b7;border:1px solid rgba(16,185,129,.32)}
+
+/* ===== 查看样张按钮 ===== */
+.btn-sample{font-size:12px;font-weight:600;color:var(--cyan);background:rgba(34,211,238,.1);border:1px solid rgba(34,211,238,.35);border-radius:99px;padding:4px 14px;cursor:pointer;white-space:nowrap;transition:.15s}
+.btn-sample:hover{background:rgba(34,211,238,.22);border-color:var(--cyan)}
+
+/* ===== Hero ===== */
+.hero{padding:64px 0 36px;border-bottom:1px solid var(--line);margin-bottom:8px}
+.hero .glow{font-size:13.5px;color:var(--cyan);letter-spacing:1px;margin-bottom:12px;line-height:1.9;max-width:860px}
+.hero h1{font-size:38px;font-weight:800;letter-spacing:.5px;background:linear-gradient(120deg,#e2e8f0,#7dd3fc 55%,#34d399);-webkit-background-clip:text;background-clip:text;color:transparent;margin-bottom:12px}
+.hero p{color:var(--sub);font-size:16px;max-width:760px}
+.hero .chips{margin-top:20px;display:flex;gap:10px;flex-wrap:wrap}
+.hero .chip{font-size:12.5px;padding:7px 16px;border-radius:99px;border:1px solid var(--line2);color:var(--sub);background:var(--card)}
+.hero .chip b{color:var(--txt)}
+
+/* ===== 图片 ===== */
+.img-banner{margin:18px 0;border:1px solid var(--line);border-radius:14px;overflow:hidden;position:relative}
+.img-banner img{width:100%;display:block}
+.img-banner .cap{position:absolute;left:0;right:0;bottom:0;padding:10px 16px;background:linear-gradient(transparent,rgba(10,14,23,.92));font-size:12.5px;color:var(--sub)}
+.img-banner .cap b{color:var(--txt)}
+.img-duo{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:center;margin:16px 0}
+.img-duo .txt h4{font-size:16px;margin-bottom:10px}
+.img-duo .txt p{font-size:13.5px;color:var(--sub)}
+.img-duo .txt ul{margin:10px 0 0 18px;font-size:13px;color:var(--sub)}
+.img-duo .txt li{margin-bottom:6px}
+.img-duo .txt li b{color:var(--txt)}
+@media(max-width:960px){.img-duo{grid-template-columns:1fr}}
+
+/* ===== Footer ===== */
+footer{margin-top:60px;padding:26px 0;border-top:1px solid var(--line);color:var(--dim);font-size:12.5px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
+
+/* ===== 移动端：吸顶栏 + 目录抽屉 ===== */
+.topbar{display:none}
+.menu-btn{width:42px;height:42px;border-radius:10px;background:var(--card);border:1px solid var(--line2);cursor:pointer;align-items:center;justify-content:center;flex-direction:column;gap:4px;flex-shrink:0}
+.menu-btn i{display:block;width:18px;height:2px;background:var(--cyan);border-radius:2px;transition:.2s}
+.menu-btn.open i:nth-child(1){transform:translateY(6px) rotate(45deg)}
+.menu-btn.open i:nth-child(2){opacity:0}
+.menu-btn.open i:nth-child(3){transform:translateY(-6px) rotate(-45deg)}
+.scrim{display:none;position:fixed;inset:0;background:rgba(5,8,14,.6);z-index:45;backdrop-filter:blur(2px)}
+.scrim.show{display:block}
+
+@media(max-width:960px){
+  /* 吸顶栏用 sticky（不用 fixed）：部分手机浏览器 fixed 元素滚动时会漂移出视口 */
+  .topbar{position:sticky;top:0;z-index:60;display:flex;align-items:center;gap:12px;padding:10px 14px;background:rgba(10,14,23,.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+  .topbar .tb-title{font-size:14px;font-weight:700;color:var(--txt);letter-spacing:.5px;line-height:1.3;overflow:hidden}
+  .topbar .tb-title small{display:block;font-size:10px;color:var(--dim);font-weight:400;letter-spacing:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .drawer-close{display:block}
+  /* 抽屉打开时锁住 body 滚动，防止内容跟着滚 */
+  body.drawer-open{overflow:hidden}
+  .sidebar{transform:translateX(-100%);transition:transform .25s ease;box-shadow:8px 0 30px rgba(0,0,0,.4);padding-top:72px}
+  .sidebar.open{transform:translateX(0)}
+  .main{margin-left:0;padding:16px 16px 60px;max-width:100%}
+  /* 窄屏全部改单列：双列卡片内含代码块/长英文，分两列会被撑宽页面 */
+  .g2,.g3,.g4{grid-template-columns:1fr}
+  .img-duo{grid-template-columns:1fr}
+  .tech{grid-template-columns:1fr}
+  .loop{grid-template-columns:1fr;gap:8px}
+  .loop .arr{transform:rotate(90deg);padding:2px 0}
+  .steps{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;gap:8px;padding-bottom:6px}
+  .steps>.step{flex:0 0 auto;width:170px;min-width:0}
+  .card,.step{max-width:100%}
+  pre{font-size:11.5px;padding:12px 14px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .hero h1{font-size:24px}
+  .hero{padding:20px 0 30px}
+  section{padding:40px 0 10px}
+}
+</style>
+</head>
+<body>
+
+<!-- ===== 移动端吸顶栏：目录按钮（sticky，滚动不掉） ===== -->
+<div class="topbar">
+  <button class="menu-btn" id="menuBtn" aria-label="打开目录"><i></i><i></i><i></i></button>
+  <div class="tb-title">TK 量化交易系统<small>Token KeyTrader · 系统介绍</small></div>
+</div>
+<div class="scrim" id="scrim"></div>
+
+<!-- ===== 侧边导航 ===== -->
+<aside class="sidebar" id="sidebar">
+  <div class="logo">
+    <span class="dot"></span><b>TK 量化交易系统</b>
+    <small>Token KeyTrader · 操作指南</small>
+    <button class="drawer-close" id="drawerClose" aria-label="收起目录">✕</button>
+  </div>
+  <nav>
+    <a href="#top" class="on"><span class="n">00</span>TK量化系统</a>
+    <a href="#overview"><span class="n">01</span>系统总览</a>
+    <a href="#arch"><span class="n">02</span>三层架构</a>
+    <a href="#reports"><span class="n">03</span>OpenClaw 引擎</a>
+    <a href="#newstrategy"><span class="n">04</span>装配式策略基座</a>
+    <a href="#tools"><span class="n">05</span>MCP工具集</a>
+    <a href="#query"><span class="n">06</span>查询类指令</a>
+    <a href="#ops"><span class="n">07</span>操作类指令</a>
+    <a href="#techs"><span class="n">08</span>组合技法</a>
+    <a href="#review"><span class="n">09</span>复盘操作</a>
+    <a href="#iterate"><span class="n">10</span>技能迭代</a>
+    <a href="#faq"><span class="n">11</span>常见问题</a>
+  </nav>
+</aside>
+
+<!-- ===== 主内容 ===== -->
+<div class="main">
+
+  <!-- HERO -->
+  <div class="hero" id="top">
+    <h1>TK 量化交易系统 <span style="font-size:.55em;font-weight:600;letter-spacing:2px;color:var(--cyan)">Token KeyTrader</span></h1>
+    <p>「AI 大脑（openclaw+技能+MCP）+ 量化全自动执行（vnpy深度修改）+ 人工引导AI复盘和技能迭代（workbuddy+MCP+技能）」三合一的<b style="color:var(--txt)">量化交易系统</b>。，赚钱逻辑：<b style="color:var(--txt)">大盘分析/选股/轮动调仓/分档加仓/逐格止盈/趋势震荡兼顾</b>。</p>
+    <div class="chips">
+      <span class="chip">策略执行 <b>vnpy</b></span>
+      <span class="chip">分析大脑 <b>openclaw</b></span>
+      <span class="chip">复盘进化 <b>workbuddy</b></span>
+      <span class="chip">外部接口 <b>vnpy_mcp（24 工具）</b></span>
+      <span class="chip">人工引导 <b>复盘 / 板块调控 / 技能迭代</b></span>
+    </div>
+    <div class="img-banner" style="margin-top:28px">
+      <img src="asset/图像/hero-trading-dashboard.png" alt="量化交易终端" loading="lazy">
+      <div class="cap"><b>量化交易终端</b> · 行情 K 线 / 资金流 / 技术指标实时呈现 —— vnpy 执行层 5 分钟一 tick 盯盘</div>
+    </div>
+  </div>
+
+  <!-- 01 系统总览 -->
+  <section id="overview">
+    <span class="sec-tag">PART 01</span>
+    <h2>系统总览</h2>
+    <p class="sec-desc">三层 AI 接力干活：<b style="color:var(--txt)">执行的手</b>（全量品种市场接入的指标量化自动交易系统）、<b style="color:var(--txt)">思考的脑</b>（openclaw 带技能和 MCP）、<b style="color:var(--txt)">复盘和监控的双眼</b>（workbuddy/codex 加技能）。你在最顶层拍板和控制技能迭代，让系统越来越聪明。</p>
+    <div class="grid g3">
+      <div class="card"><div class="ic b-blue">📡</div><h4>实时直连</h4><p>vnpy_mcp 直连量化系统，查询返回实时数据（非缓存），无需用户名参数。</p></div>
+      <div class="card"><div class="ic b-cyan">🤖</div><h4>自动执行</h4><p>网格每 5 分钟（最小为1分钟）检查触发，自动加仓/止盈/止损，机器人不眨眼。</p></div>
+      <div class="card"><div class="ic b-teal">🧠</div><h4>AI 决策</h4><p>信号探针触发或定时进行AI深度分析行情/新闻/财报/板块轮动，输出策略报告。</p></div>
+      <div class="card"><div class="ic b-amber">🔄</div><h4>正向循环</h4><p>复盘 → 老板控制技能迭代 → 分析质量提升 → 交易优化 → 系统越来越聪明。</p></div>
+      <div class="card"><div class="ic b-red">🎛️</div><h4>人工引导</h4><p>你在最顶层通过 workbuddy/codex 引导复盘和板块调控，引导 AI 系统复盘和技能迭代。</p></div>
+      <div class="card"><div class="ic b-purple">💰</div><h4>赚钱逻辑</h4><p>趋势+震荡兼顾：AI识别行情，设定参数，单边靠趋势跟随，震荡靠网格收割，暴跌止损兜底。</p></div>
+    </div>
+    <div class="img-duo">
+      <div class="img-banner" style="margin:0">
+        <img src="asset/截图/网格模板的工作原理.jpg" alt="马丁格尔网格工作原理（GE 实例）" loading="lazy">
+        <div class="cap"><b>马丁格尔网格工作原理</b> · 以 GE 为例：跌了分档接、涨了逐格卖；一路加仓摊低价 $380.8 → $364.7，反弹时逐格止盈</div>
+      </div>
+      <div class="txt">
+        <h4>一句话看懂赚钱逻辑</h4>
+        <p>AI布下的聪明网格像一架「阶梯」：股价在台阶间来回震荡，系统就在台阶上反复低买高卖。</p>
+        <ul>
+          <li><b>震荡市</b>：价格反复穿越网格线 → 逐格止盈落袋（FCX 一轮 +$1,516）</li>
+          <li><b>单边跌</b>：阶梯不断下移接货，仓位变重 → 必须靠止损兜底</li>
+          <li><b>单边涨</b>：逐格减仓收割，趋势走对了靠移动止盈锁利</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 02 三层架构 -->
+  <section id="arch">
+    <span class="sec-tag">PART 02</span>
+    <h2>三层架构</h2>
+    <p class="sec-desc">从交易引擎到 AI 大脑到人工复盘，每一层职责清晰、数据单向流动、决策逐级上报。</p>
+    <div class="img-duo">
+      <div class="txt">
+        <h4>三层分工，各司其职</h4>
+        <p>执行层是「手」，分析层是「脑」，复盘层是「双眼」——三层通过 vnpy_mcp 数据总线串联，决策权逐级向上报到老板。</p>
+        <ul>
+          <li><b>① vnpy 执行层</b>：CTA 策略 5 分钟级盯盘，网格自动执行</li>
+          <li><b>② openclaw 分析层 + 订单审核</b>：定时（间隔可设置）与信号探针双触发深度分析，输出参数建议；每笔调仓下单前再过一道订单审核</li>
+          <li><b>③ workbuddy 复盘层</b>：拉真实数据核对，驱动技能进化</li>
+        </ul>
+      </div>
+      <div class="img-banner" style="margin:0">
+        <img src="asset/图像/arch-three-layers.png" alt="三层架构" loading="lazy">
+        <div class="cap"><b>三层架构</b> · 执行 → 分析 → 复盘，光柱代表数据与指令的双向流动</div>
+      </div>
+    </div>
+    <div class="arch">
+      <div class="layer l1">
+        <div class="name">③ workbuddy / codex — 复盘层（复盘的双眼）</div>
+        <div class="role">通过 vnpy_mcp 拉取真实数据，核对 AI 是否乱来、参数是否漂移，发现缺陷改进技能文档。</div>
+        <div class="items"><span class="chip">拉取数据</span><span class="chip">三方核对</span><span class="chip">写复盘报告</span><span class="chip">改进技能</span><span class="chip">只读不写</span></div>
+      </div>
+      <div class="flow-arrow">▲</div>
+      <div class="layer l2">
+        <div class="name">② openclaw — 分析层 + 订单审核（思考的脑）</div>
+        <div class="role">加载 tiger-stock-strategy-analysis 技能，定时（间隔可配置，当前实盘每 1 小时）与信号探针双触发深度分析，输出参数建议与风险判断；每笔调仓目标在下单前还要经订单审核独立把关——分析与审核双重过滤。</div>
+        <div class="items"><span class="chip">大盘分析</span><span class="chip">选股</span><span class="chip">策略分析</span><span class="chip">订单审核</span><span class="chip">持仓风控</span><span class="chip">参数建议</span></div>
+      </div>
+      <div class="flow-arrow">▲</div>
+      <div class="layer l3">
+        <div class="name">① vnpy — 执行层（执行的手）</div>
+        <div class="role">CTA 策略按分钟线运行，网格自动加仓/止盈/止损，McpEngine 暴露 27 个 MCP 工具。</div>
+        <div class="items"><span class="chip">账户/持仓</span><span class="chip">委托/成交</span><span class="chip">网格触发</span><span class="chip">止损兜底</span><span class="chip">MCP Server</span></div>
+      </div>
+    </div>
+    <h3>实盘系统长这样（vnpy CTA 运行面板）</h3>
+    <p class="sub3">左边是各策略的 K 线与信号状态（AI 分析、信号探针、RSI 阈值），右边是 OpenClaw 执行状态与任务会话——AI 每次分析完，结论就出现在这里。</p>
+    <div class="img-banner">
+      <img src="asset/截图/运行截图_CTA面板.jpg" alt="vnpy CTA 策略运行面板" loading="lazy">
+      <div class="cap"><b>vnpy CTA 运行面板</b> · 左：策略 K 线 + 信号状态（MARTIN-GOLD/JPM/INTEL）；右：OpenClaw 执行状态 + 大盘分析任务会话</div>
+    </div>
+    <h3>核心业务闭环</h3>
+    <div class="loop">
+      <div class="node"><b>定时分析</b><span>vnpy 按间隔调用 openclaw</span></div>
+      <div class="arr">→</div>
+      <div class="node"><b>AI 决策</b><span>加载技能 + 拉数据 + 输出建议</span></div>
+      <div class="arr">→</div>
+      <div class="node"><b>参数下发</b><span>vnpy_mcp 操作工具执行</span></div>
+      <div class="arr">→</div>
+      <div class="node"><b>人工复盘</b><span>workbuddy 拉数据核对</span></div>
+    </div>
+    <div class="img-banner" style="margin-top:16px">
+      <img src="asset/截图/三层协作示意图.jpg" alt="三层 AI 协作示意图" loading="lazy">
+      <div class="cap"><b>三层协作示意</b> · 执行的手（vnpy）↕ 思考的脑（openclaw）↕ 复盘的双眼（workbuddy），老板 = 最终拍板人</div>
+    </div>
+  </section>
+
+  <!-- 03 分析报告 -->
+  <section id="reports">
+    <span class="sec-tag">PART 03</span>
+    <h2>内置 openclaw 分析与审核引擎</h2>
+    <p class="sec-desc">AI 大脑的四种输出，覆盖大盘、选股与策略全维度；同时可进行下单前审核。</p>
+    <div class="tbl-wrap"><table>
+      <tr><th>报告类型</th><th>查看样张</th><th>能看什么</th><th>频率</th></tr>
+      <tr><td><b>大盘分析</b></td><td><button class="btn-sample" onclick="location.href='show_md.html?f='+encodeURIComponent('01_美股大盘与板块和资金流向分析_20260828.md')">点击查看</button></td><td>方向 / risk_budget / 板块轮动预测 / 资金流向 / 风险提示</td><td>每日</td></tr>
+      <tr><td><b>做多选股</b></td><td><button class="btn-sample" onclick="location.href='show_md.html?f='+encodeURIComponent('02_美股做多选股结果_20260827.md')">点击查看</button></td><td>候选池 / 评分卡 / 下一轮动预测 / 观察清单</td><td>每日</td></tr>
+      <tr><td><b>做空选股</b></td><td><button class="btn-sample" onclick="location.href='show_md.html?f='+encodeURIComponent('03_美股做空选股结果_20260828.md')">点击查看</button></td><td>做空候选 / 反方审查 / 拒绝原因</td><td>每日</td></tr>
+      <tr><td><b>策略分析</b></td><td><button class="btn-sample" onclick="location.href='show_md.html?f='+encodeURIComponent('04_策略分析_MARTIN-GOLD_20260829.md')">点击查看</button></td><td>持仓回顾 / 参数核验 / 操作建议 / 参数修改理由</td><td>定时/信号触发</td></tr>
+    </table></div>
+    <div class="img-banner">
+      <img src="asset/截图/内置openclaw的任务计划设置.jpg" alt="内置 openclaw 的任务计划设置" loading="lazy">
+      <div class="cap"><b>openclaw 内置任务计划设置</b> · 大盘分析 / 选股 / 策略分析等定时任务的配置面板</div>
+    </div>
+    <h3>大盘报告核心字段</h3>
+    <div class="grid g4">
+      <div class="card"><h4>执行层摘要</h4><p>direction + risk_budget + max_exposure_pct</p></div>
+      <div class="card"><h4>板块轮动</h4><p>主线板块 / 下一棒预测 / 流出板块</p></div>
+      <div class="card"><h4>宏观 / 信用 / 资金</h4><p>Fed 立场 / US10Y / OAS / 股基流入 / 货币基金 AUM</p></div>
+      <div class="card"><h4>风险提示</h4><p>事件窗口 / 利率 / 拥挤度 / 就业衰退 / IPO 抽血</p></div>
+    </div>
+    <div class="card" style="margin-top:14px;border-left:3px solid var(--cyan)">
+      <p style="font-size:13px;color:var(--sub)"><b style="color:var(--cyan)">使用姿势：</b>先 <span class="mono">cta_report_list()</span> 看目次 → 再 <span class="mono">cta_report_get(report_kind, report_index=-1)</span> 拉最新（-1=最新）。策略分析则用 <span class="mono">strategy_name</span>。</p>
+    </div>
+  </section>
+
+  <!-- 04 装配式策略基座 -->
+  <section id="newstrategy">
+    <span class="sec-tag">PART 04</span>
+    <h2>装配式策略基座</h2>
+    <p class="sec-desc">五步走：查类 → 查参 → 查 symbol → 开仓 → 验证。</p>
+    <div class="steps">
+      <div class="step"><span class="no">1</span><h5>查策略类</h5><p><span class="mono">cta_strategy_get_classes</span><br>确认类型（openclaw_martin_Strategy）</p></div>
+      <div class="step"><span class="no">2</span><h5>查必填参数</h5><p><span class="mono">get_class_parameters</span><br>init_load_days / start_asset / first_part</p></div>
+      <div class="step"><span class="no">3</span><h5>查 vt_symbol</h5><p><span class="mono">search_vt_symbol("AAPL")</span><br>→ 265598.SMART（严禁自己拼）</p></div>
+      <div class="step"><span class="no">4</span><h5>新增并启动</h5><p><span class="mono">cta_strategy_add_and_start</span><br>传 class/name/vt_symbol/setting</p></div>
+      <div class="step"><span class="no">5</span><h5>回拉验证</h5><p><span class="mono">cta_strategy_get_status</span><br>确认持仓/参数/运行状态</p></div>
+    </div>
+    <h3>先看「策略基座」：四段式组装模板</h3>
+    <p class="sub3">每个 MARTIN 策略 = 同一段代码 + 不同参数组合。参数面板分四段：<b style="color:var(--txt)">策略盘面</b>（资金/首仓/轮动方向）、<b style="color:var(--txt)">信号探针</b>（各类指标触发开关）、<b style="color:var(--txt)">网格与仓位防御</b>（格数/间距/补仓/亏损加仓）、<b style="color:var(--txt)">多种止损止盈</b>（固定/移动/ATR 多层防御）。AI 能做的，就是在这四段里"千变万化"地配参数——这是它可控的基座。</p>
+    <div class="img-banner">
+      <img src="asset/截图/四段式组装策略模板（可被AI控制的千变万化的策略基座）.png" alt="四段式组装策略模板" loading="lazy">
+      <div class="cap"><b>四段式组装策略模板</b> · 可被 AI 控制的千变万化的策略基座（MARTIN-GOLD 参数面板实测）</div>
+    </div>
+    <h3>实盘示例：8/29 开 MARTIN-GOLD（$10,000）</h3>
+<pre><span class="f">cta_strategy_add_and_start</span>(
+    class_name=<span class="s">"openclaw_martin_Strategy"</span>,
+    strategy_name=<span class="s">"MARTIN-GOLD"</span>,
+    vt_symbol=<span class="s">"146266831.SMART"</span>,   <span class="c"># search_vt_symbol("GOLD") 返回</span>
+    setting={
+        <span class="s">"init_load_days"</span>: <span class="n">5</span>,
+        <span class="s">"use_1m_5m_15m_30m_60m"</span>: <span class="n">15</span>,
+        <span class="s">"start_asset"</span>: <span class="n">10000.0</span>,   <span class="c"># 初始资金 $10,000</span>
+        <span class="s">"first_part"</span>: <span class="n">0.2</span>            <span class="c"># 首仓 20%</span>
+    })
+<span class="c"># → {"success": true, "message": "策略 MARTIN-GOLD 已添加、初始化并启动成功"}</span></pre>
+    <div class="card" style="margin-top:14px;border-left:3px solid var(--amber)">
+      <p style="font-size:13px;color:var(--sub)"><b style="color:var(--amber)">⚠️ 开仓前必查：</b>标的画像交叉核对！8/29 GOLD 案例：选股报告按「金矿商」评分，外部数据显示是「贵金属交易商」——<b style="color:var(--txt)">同一 ticker 两种画像，开仓前必须核实标的真实身份</b>，否则基本面逻辑不成立。</p>
+    </div>
+  </section>
+
+  <!-- 05 工具全景 -->
+  <section id="tools">
+    <span class="sec-tag">PART 05</span>
+    <h2>MCP工具集全景</h2>
+    <p class="sec-desc">vnpy_mcp 提供 24 个工具、覆盖 8 大类，查询与操作一条龙。</p>
+    <div class="tbl-wrap"><table>
+      <tr><th>分类</th><th>工具</th><th>用途</th></tr>
+      <tr><td><b>健康检查</b></td><td><span class="mono">ping</span></td><td>服务是否正常（返回 pong）</td></tr>
+      <tr><td><b>账户 / 持仓</b></td><td><span class="mono">get_accounts</span> / <span class="mono">get_positions</span></td><td>总资产/可用 / 持仓明细（数量/成本/盈亏）</td></tr>
+      <tr><td><b>策略状态</b></td><td><span class="mono">cta_strategies_get_all</span> / <span class="mono">get_status</span> / <span class="mono">get_all_reason</span></td><td>策略概况 / 单策略状态 / 决策上下文+参数留痕</td></tr>
+      <tr><td><b>成交委托</b></td><td><span class="mono">get_trades</span> / <span class="mono">get_active_orders</span></td><td>本次启动后成交 / 活动委托</td></tr>
+      <tr><td><b>分析报告</b></td><td><span class="mono">cta_report_list</span> / <span class="mono">cta_report_get</span></td><td>报告目次 / 大盘+选股+策略分析报告</td></tr>
+      <tr><td><b>行情合约</b></td><td><span class="mono">get_tick</span> / <span class="mono">get_history_bars</span> / <span class="mono">get_contract</span> / <span class="mono">search_vt_symbol</span></td><td>Tick / K线 / 合约 / conid 查询</td></tr>
+      <tr><td><b>操作指令</b></td><td><span class="mono">set_target_pos</span> / <span class="mono">close</span> / <span class="mono">set_parameters</span> / <span class="mono">send_notice</span></td><td>调仓 / 平仓 / 设参 / 通知</td></tr>
+      <tr><td><b>启停增删</b></td><td><span class="mono">start</span> / <span class="mono">stop</span> / <span class="mono">add_and_start</span> / <span class="mono">delete</span></td><td>策略生命周期管理</td></tr>
+    </table></div>
+  </section>
+
+  <!-- 06 查询操作 -->
+  <section id="query">
+    <span class="sec-tag">PART 06</span>
+    <h2>查询类指令</h2>
+    <p class="sec-desc">三大高频查询 + 决策上下文，日常监控与审计全覆盖。</p>
+    <div class="grid g2">
+      <div class="card"><div class="ic b-blue">👤</div><h4>账户查询</h4><p><span class="mono">get_accounts()</span><br>返回 balance(总资产)/frozen(冻结)/available(可用)。<br><b style="color:var(--amber)">注意：</b>balance 已含持仓市值，勿重复相加。</p></div>
+      <div class="card"><div class="ic b-teal">💼</div><h4>持仓查询</h4><p><span class="mono">get_positions()</span><br>返回持仓明细：品种/数量/成本价/盈亏。</p></div>
+      <div class="card"><div class="ic b-cyan">📊</div><h4>策略总览</h4><p><span class="mono">cta_strategies_get_all()</span><br>中文键名：持仓/盈亏/网格/止盈止损/亏损加仓/资金占比。</p></div>
+      <div class="card"><div class="ic b-purple">🔍</div><h4>决策上下文</h4><p><span class="mono">cta_strategy_get_all_reason(name)</span><br>开仓理由 + 最近分析 + 交易历史 + 参数最近修改留痕。</p></div>
+    </div>
+    <h3>策略记忆：为什么参数会被改？（get_all_reason 四块输出）</h3>
+    <div class="grid g4">
+      <div class="card"><h4>持仓上下文</h4><p>当前持仓 / 方向 / 开仓时间 / 首仓价</p></div>
+      <div class="card"><h4>AI 分析理由</h4><p>开仓时 + 最近一次的分析依据全文</p></div>
+      <div class="card"><h4>交易历史</h4><p>每笔开/加/减仓：时间/价格/数量/备注</p></div>
+      <div class="card"><h4>参数留痕</h4><p>ts / from / to / source(ai|reset) / reason</p></div>
+    </div>
+  </section>
+
+  <!-- 07 操作指令 -->
+  <section id="ops">
+    <span class="sec-tag">PART 07</span>
+    <h2>操作类指令</h2>
+    <p class="sec-desc">调仓、平仓、设参、启停、增删策略——实时生效，直连量化系统。</p>
+    <div class="card" style="margin-bottom:16px;border-left:3px solid var(--cyan);background:rgba(34,211,238,.04)">
+      <h4 style="color:var(--cyan);margin-bottom:8px">🤝 关键：这些代码谁在写？</h4>
+      <p style="font-size:13.5px;color:var(--sub);margin-bottom:12px">下面这些调用<b style="color:var(--txt)">不是人手敲的</b>。操作入口是<b style="color:var(--txt)">外部智能体（WorkBuddy / Codex 等 MCP 客户端）</b>——老板只用<b style="color:var(--txt)">自然语言</b>下指令，智能体把它翻译成标准工具调用发给 vnpy_mcp，系统实时执行。</p>
+      <div class="steps" style="margin:0">
+        <div class="step"><span class="no">1</span><h5>自然语言</h5><p>老板："把 AMD 减半仓"</p></div>
+        <div class="step"><span class="no">2</span><h5>智能体翻译</h5><p>WorkBuddy/Codex 解析意图，查当前持仓，生成工具调用（就是下面的代码）</p></div>
+        <div class="step"><span class="no">3</span><h5>vnpy 执行</h5><p>vnpy_mcp 接收调用 → 实时调仓，立即生效</p></div>
+        <div class="step"><span class="no">4</span><h5>回执核对</h5><p>智能体拉回 status/持仓确认，报告给老板</p></div>
+      </div>
+      <p style="font-size:12.5px;color:var(--dim);margin-top:12px">所以这页代码的作用是<b style="color:var(--txt)">给智能体看的"API 契约"</b>：参数名、类型、约束写清楚，智能体才不会拼错 vt_symbol、把百分比当资金量。人全程只说话，不写代码。</p>
+    </div>
+    <div class="grid g2">
+      <div class="card"><div class="ic b-blue">🎯</div><h4>调仓 / 平仓</h4>
+<pre><span class="c"># 目标仓位是【绝对股数】，不是资金比例；0=空仓，负数=空头</span>
+<span class="f">cta_strategy_set_target_pos</span>(
+    strategy_name=<span class="s">"MARTIN-AMD"</span>,
+    target_pos=<span class="n">100</span>,
+    reason=<span class="s">"板块走弱减仓"</span>)
+
+<span class="c"># 平仓（等价 target_pos=0）</span>
+<span class="f">cta_strategy_close</span>(strategy_name=<span class="s">"MARTIN-AMD"</span>)</pre></div>
+      <div class="card"><div class="ic b-amber">⚙️</div><h4>修改参数</h4>
+<pre><span class="c"># 只传需改的参数；值保持原始类型（float 传 0.02 不是 "2%"）</span>
+<span class="f">cta_strategy_set_parameters</span>(
+    strategy_name=<span class="s">"MARTIN-AMD"</span>,
+    parameters={<span class="s">"stop_loss_radio"</span>: <span class="n">0.02</span>,
+                 <span class="s">"enable_martin_sub"</span>: <span class="k">True</span>})</pre>
+<p style="margin-top:8px">参数立即写入并保存，<b style="color:var(--teal)">重启不丢失</b>；但不主动触发交易动作。</p></div>
+      <div class="card"><div class="ic b-teal">🚀</div><h4>启停 / 通知</h4>
+<pre><span class="f">cta_strategy_start</span>(<span class="s">"MARTIN-AMD"</span>)   <span class="c"># 未初始化先初始化</span>
+<span class="f">cta_strategy_stop</span>(<span class="s">"MARTIN-AMD"</span>)    <span class="c"># 停止不删除</span>
+<span class="f">cta_strategy_send_notice</span>(
+    <span class="s">"MARTIN-AMD"</span>, message=<span class="s">"注意风控"</span>)  <span class="c"># 仅记录</span></pre></div>
+      <div class="card"><div class="ic b-red">➕➖</div><h4>增删策略</h4>
+<pre><span class="f">cta_strategy_add_and_start</span>(
+    class_name=<span class="s">"openclaw_martin_Strategy"</span>,
+    strategy_name=<span class="s">"MARTIN-AAPL"</span>,
+    vt_symbol=<span class="s">"265598.SMART"</span>,   <span class="c"># 严禁自己拼！</span>
+    setting={})
+
+<span class="f">cta_strategy_delete</span>(<span class="s">"MARTIN-AAPL"</span>)  <span class="c"># 需持仓=0</span></pre></div>
+    </div>
+  </section>
+
+  <!-- 07 组合技法 -->
+  <section id="techs">
+    <span class="sec-tag">PART 08</span>
+    <h2>WorkBuddy/Codex组合技法实战</h2>
+    <p class="sec-desc">单工具是「零件」，组合技法才是「完整任务」。五个高频组合拳，点击查看工具链。</p>
+    <div class="tech">
+      <div class="t" onclick="location.href='#tech1'"><span class="tag">高频</span><div class="big">①</div><h5>每日全景复盘</h5><p>账户 + 策略 + 报告全貌</p></div>
+      <div class="t" onclick="location.href='#tech2'"><span class="tag">选股</span><div class="big">②</div><h5>小盘价值挖掘</h5><p>报告 → 调研 → 开仓流水线</p></div>
+      <div class="t" onclick="location.href='#tech3'"><span class="tag">风控</span><div class="big">③</div><h5>事件窗口核查</h5><p>财报/CPI/FOMC 前检查</p></div>
+      <div class="t" onclick="location.href='#tech4'"><span class="tag">审计</span><div class="big">④</div><h5>参数变更审计</h5><p>留痕 + 报告反推来龙去脉</p></div>
+      <div class="t" onclick="location.href='#tech5'"><span class="tag">调仓</span><div class="big">⑤</div><h5>板块轮动调仓</h5><p>对照轮动方向调整持仓</p></div>
+    </div>
+
+    <div class="card" id="tech1" style="margin-top:14px">
+      <h4>① 每日全景复盘 <span class="pill p-p0">高频</span></h4>
+      <p style="color:var(--sub);font-size:13.5px;margin:8px 0 10px">晨间/收盘快速掌握账户与策略全貌，产出当日复盘报告。</p>
+      <div class="steps" style="margin:0">
+        <div class="step"><span class="no">1</span><h5>拉账户</h5><p>get_accounts</p></div>
+        <div class="step"><span class="no">2</span><h5>拉持仓</h5><p>get_positions</p></div>
+        <div class="step"><span class="no">3</span><h5>拉策略</h5><p>cta_strategies_get_all</p></div>
+        <div class="step"><span class="no">4</span><h5>拉报告</h5><p>大盘 + 各策略 -1</p></div>
+        <div class="step"><span class="no">5</span><h5>三方核对</h5><p>trades + 报告 + 持仓</p></div>
+      </div>
+    </div>
+    <div class="card" id="tech2" style="margin-top:12px">
+      <h4>② 小盘价值股挖掘流水线 <span class="pill p-p1">选股</span></h4>
+      <p style="color:var(--sub);font-size:13.5px;margin:8px 0 10px">做多选股报告 → 锁定目标 → 交叉核验 → 开仓 → 验证。实盘：8/29 GOLD（$10,000）。</p>
+      <div class="steps" style="margin:0">
+        <div class="step"><span class="no">1</span><h5>选股报告</h5><p>做多选股结果</p></div>
+        <div class="step"><span class="no">2</span><h5>锁目标</h5><p>评分过线+板块轮动</p></div>
+        <div class="step"><span class="no">3</span><h5>查 symbol</h5><p>search_vt_symbol</p></div>
+        <div class="step"><span class="no">4</span><h5>交叉核验</h5><p>外部数据防张冠李戴</p></div>
+        <div class="step"><span class="no">5</span><h5>开仓验证</h5><p>add_and_start + get_status</p></div>
+      </div>
+      <h3 style="margin-top:18px">实盘截图：老板一句话，流水线自动跑完</h3>
+      <p class="sub3">左边：「挑一个价值投资类型的小盘股，机会大的，推荐给我」→ AI 拉选股报告 + 外部数据交叉核验，推荐唯一过线的 GOLD（附评分卡与画像）。右边：「第一个，投入 1 万美金，开一个策略」→ 自动建 MARTIN-GOLD 并回验。</p>
+      <div class="grid g2" style="gap:14px">
+        <div class="img-banner" style="margin:0">
+          <img src="asset/截图/workbuddy截图_小盘股选择.jpg" alt="小盘股选择实盘截图" loading="lazy">
+          <div class="cap"><b>① 小盘股选择</b> · 自然语言选股 → 评分 4.02 唯一过线 → 市值/板块/增长/技术面画像卡</div>
+        </div>
+        <div class="img-banner" style="margin:0">
+          <img src="asset/截图/workbuddy截图_小盘股自动建立策略和开仓.jpg" alt="小盘股自动建立策略和开仓实盘截图" loading="lazy">
+          <div class="cap"><b>② 自动建策略开仓</b> · 10 秒完成：MARTIN-GOLD + conid 确认 + $10,000 + 首仓 20% + 回验运行中</div>
+        </div>
+      </div>
+    </div>
+    <div class="card" id="tech3" style="margin-top:12px">
+      <h4>③ 事件窗口风控核查 <span class="pill p-p0">风控</span></h4>
+      <p style="color:var(--sub);font-size:13.5px;margin:8px 0 10px">重大事件（财报/CPI/FOMC）前逐持仓检查风控参数。实盘：8/26 NVDA 财报前查"接刀四件套"。</p>
+      <div class="steps" style="margin:0">
+        <div class="step"><span class="no">1</span><h5>确认事件</h5><p>大盘报告风险等级</p></div>
+        <div class="step"><span class="no">2</span><h5>筛持仓</h5><p>事件相关标的</p></div>
+        <div class="step"><span class="no">3</span><h5>查参数</h5><p>移动止盈/亏损加仓</p></div>
+        <div class="step"><span class="no">4</span><h5>对照模板</h5><p>TSLA 全开 vs NVDA 全关</p></div>
+        <div class="step"><span class="no">5</span><h5>授权调参</h5><p>set_parameters</p></div>
+      </div>
+    </div>
+    <div class="card" id="tech4" style="margin-top:12px">
+      <h4>④ 参数变更审计 <span class="pill p-p1">审计</span></h4>
+      <p style="color:var(--sub);font-size:13.5px;margin:8px 0 10px">参数"莫名"变了？查是谁/何时/为何。实盘：JPM 8/18 正文有理由、结构化字段空。</p>
+      <div class="steps" style="margin:0">
+        <div class="step"><span class="no">1</span><h5>查留痕</h5><p>get_all_reason</p></div>
+        <div class="step"><span class="no">2</span><h5>翻报告</h5><p>-1/-2/-3 逐份</p></div>
+        <div class="step"><span class="no">3</span><h5>找跳变</h5><p>比对参数快照</p></div>
+        <div class="step"><span class="no">4</span><h5>核字段</h5><p>参数修改理由</p></div>
+        <div class="step"><span class="no">5</span><h5>比对实际</h5><p>get_status 确认</p></div>
+      </div>
+    </div>
+    <div class="card" id="tech5" style="margin-top:12px">
+      <h4>⑤ 板块轮动调仓 <span class="pill p-p2">调仓</span></h4>
+      <p style="color:var(--sub);font-size:13.5px;margin:8px 0 10px">大盘报告说"下一棒是金融/材料/能源"，对照自己持仓是否站对方向。实盘：8/28 工业流出、金融接棒。</p>
+      <div class="steps" style="margin:0">
+        <div class="step"><span class="no">1</span><h5>轮动预测</h5><p>大盘报告</p></div>
+        <div class="step"><span class="no">2</span><h5>目标板块</h5><p>做多/做空选股</p></div>
+        <div class="step"><span class="no">3</span><h5>对照持仓</h5><p>流出 vs 流入</p></div>
+        <div class="step"><span class="no">4</span><h5>决策</h5><p>减流出/加流入</p></div>
+        <div class="step"><span class="no">5</span><h5>授权执行</h5><p>set_target_pos / add</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 09 复盘操作 -->
+  <section id="review">
+    <span class="sec-tag">PART 09</span>
+    <h2>AI和人工协作复盘</h2>
+    <p class="sec-desc">复盘 = 通过 workbuddy/codex 连接实盘系统，定期检查交易与分析的好坏，持续改进技能。</p>
+    <h3>每日标准流程</h3>
+    <div class="steps">
+      <div class="step"><span class="no">1</span><h5>拉全景</h5><p>strategies + accounts + positions</p></div>
+      <div class="step"><span class="no">2</span><h5>拉报告</h5><p>大盘 + 各持仓策略分析</p></div>
+      <div class="step"><span class="no">3</span><h5>三方核对</h5><p>trades + 报告 + 持仓变化</p></div>
+      <div class="step"><span class="no">4</span><h5>找问题</h5><p>参数漂移？建议落地？接刀？</p></div>
+      <div class="step"><span class="no">5</span><h5>出报告</h5><p>复盘记录/YYYY-MM-DD/</p></div>
+      <div class="step"><span class="no">6</span><h5>改文档</h5><p>授权后走技能迭代流程</p></div>
+    </div>
+    <h3>复盘结果改进三能力</h3>
+    <div class="grid g3">
+      <div class="card"><div class="ic b-blue">📈</div><h4>分析能力</h4><p>大盘与板块分析、策略分析的准确性与稳定性。</p></div>
+      <div class="card"><div class="ic b-teal">🎛️</div><h4>参数设置能力</h4><p>空仓→开仓→持仓→加减仓→平仓各阶段参数准确性。</p></div>
+      <div class="card"><div class="ic b-purple">🕹️</div><h4>干预能力</h4><p>用 vnpy_mcp 参数设置与下单能力干预策略运行。</p></div>
+    </div>
+    <h3>复盘产出长这样（workbuddy 实盘截图）</h3>
+    <p class="sub3">老板一句「复盘昨天的情况」，workbuddy 自动拉全景数据、生成结构化复盘报告：一句话结论 → 核心判断 → 账户还原 → 逐笔解读，全程只读不写。</p>
+    <div class="img-banner">
+      <img src="asset/截图/workbuddy截图_每日复盘.jpg" alt="workbuddy 每日复盘实盘截图" loading="lazy">
+      <div class="cap"><b>workbuddy 每日复盘</b> · 自然语言下指令 → 自动拉数据 + 交叉核对 → 输出复盘报告（含账户/持仓/成交还原）</div>
+    </div>
+    <h3>统计分析：持仓全景一张图</h3>
+    <p class="sub3">复盘数据还能直接出统计图：持仓规模占比（$50,291 / 32%）、板块分布、市值规模分层、个股持仓市值排序——板块集中度、大小盘结构一眼看清，为板块轮动调仓提供依据。</p>
+    <div class="img-banner">
+      <img src="asset/截图/workbuddy截图_复盘统计分析.jpg" alt="复盘统计分析可视化" loading="lazy">
+      <div class="cap"><b>复盘统计分析</b> · 持仓 $50,291（占比 32%）· 12 只 · 板块分布 + 市值分层 + 个股市值排序</div>
+    </div>
+  </section>
+
+  <!-- 10 技能迭代 -->
+  <section id="iterate">
+    <span class="sec-tag">PART 10</span>
+    <h2>技能迭代操作</h2>
+    <p class="sec-desc">复盘发现问题 → 深度反思找根因 → 备份 → 最小变更 → 自动写 CHANGELOG，让 AI 越来越聪明。</p>
+    <h3>五层深度反思思维链</h3>
+    <div class="steps">
+      <div class="step"><span class="no">L1</span><h5>事实还原</h5><p>发生了什么？逐策略还原完整交易生命周期</p></div>
+      <div class="step"><span class="no">L2</span><h5>根因穿透</h5><p>为什么？连续追问 5 次「为什么」</p></div>
+      <div class="step"><span class="no">L3</span><h5>高度归纳</h5><p>共性？抽象为模式（输出不落地/参数裸奔）</p></div>
+      <div class="step"><span class="no">L4</span><h5>逆向思维</h5><p>反过来想：失败反做=机会？共识哪里出错？</p></div>
+      <div class="step"><span class="no">L5</span><h5>机会发现</h5><p>提炼可验证改进方向（数据佐证+可映射条款）</p></div>
+    </div>
+    <h3>迭代五步流程</h3>
+    <div class="steps">
+      <div class="step"><span class="no">1</span><h5>提炼改进项</h5><p>读复盘报告 + 反思备忘录</p></div>
+      <div class="step"><span class="no">2</span><h5>定位技能文档</h5><p>docs/ 下具体章节</p></div>
+      <div class="step"><span class="no">3</span><h5>备份</h5><p>History/ 同构目录 + 日期后缀</p></div>
+      <div class="step"><span class="no">4</span><h5>最小变更</h5><p>只改相关条款 + 标注来源</p></div>
+      <div class="step"><span class="no">5</span><h5>写 CHANGELOG</h5><p>改进项 + 变更详情 + 未完成项</p></div>
+    </div>
+  </section>
+
+  <!-- 11 FAQ -->
+  <section id="faq">
+    <span class="sec-tag">PART 11</span>
+    <h2>常见问题 FAQ</h2>
+    <div class="faq"><div class="q">我如果使用 TK 量化交易系统，还需要盯盘吗？<span class="pm">＋</span></div><div class="a">建议经常看看系统盘面，但<b>不看并不影响自动交易</b>——网格加仓/止盈/止损都在策略里自动执行。不过<b>强烈建议定时使用 workbuddy/codex 工具参与复盘和策略技能迭代改进</b>，这是系统越来越聪明的关键动作。</div></div>
+    <div class="faq"><div class="q">我全程不用写代码吧？平时怎么用？<span class="pm">＋</span></div><div class="a">不用。人只说<b>自然语言</b>：比如「把 AMD 减半仓」「复盘昨天的情况」「挑一个小盘价值股推荐给我」，外部智能体（workbuddy/codex）会把话翻译成标准工具调用，实时发给量化系统执行，再把结果汇报给你。</div></div>
+    <div class="faq"><div class="q">AI 说了就算数吗？开仓、改参数谁做主？<span class="pm">＋</span></div><div class="a">AI 可以设置参数，并让策略全自动交易，但<b>策略代码本身不是由 AI 直接驱动，而是由参数定义下的量化指标体系在驱动交易</b>——微观上符合量化交易的基本原则，因子和指标信号驱动。同时 AI 还能进行下单审查，所以 AI 其实是<b>作为一个冷静的旁观者存在</b>。</div></div>
+    <div class="faq"><div class="q">AI 分析错了怎么办？有没有兜底？<span class="pm">＋</span></div><div class="a">多层兜底：每笔下单前有订单审核拦截；执行层有止损、移动止盈等硬性风控；复盘时用 workbuddy 拉真实数据三方核对，发现问题进入技能迭代流程改技能文档，下次分析就不重犯。</div></div>
+    <div class="faq"><div class="q">「技能迭代」到底是什么？<span class="pm">＋</span></div><div class="a">简单说就是<b>复盘发现问题 → 深度反思找根因 → 备份 → 最小改动 → 记日志</b>的固定流程，且必须经你授权才执行。技能文档改一次，AI 下次的分析和交易就更靠谱一点——系统变聪明靠的是这个循环，不是玄学。</div></div>
+    <div class="faq"><div class="q">TK 量化系统有几个策略？<span class="pm">＋</span></div><div class="a">TK 量化系统本身是内外两套 AI 驱动下的量化交易系统，<b>四段参数组合的装配式策略基座</b>，可以在 AI 技能驱动下，化身为各种策略；同时，您也可以自己用智能体工具在策略基类之上写出自己的策略，在 AI 驱动下执行！</div></div>
+    <div class="faq"><div class="q">安装和运行简单吗？<span class="pm">＋</span></div><div class="a">作为智能体时代的软件，TK 量化系统可以用 workbuddy/codex 等智能体安装：把安装指南交给它们，就能<b>全自动执行 WSL 的 openclaw 镜像恢复安装，及一键部署包的量化系统安装</b>。只有<b>交易账号配置</b>这一步需要人工设置。</div></div>
+  </section>
+
+  <footer>
+    <span>TK 量化交易系统（Token KeyTrader）· 内部资料 · 2026-08</span>
+    <span>三层 AI 闭环：执行 · 分析 · 复盘 → 人工引导迭代</span>
+  </footer>
+</div>
+
+<script>
+// 导航高亮
+const links=[...document.querySelectorAll('.sidebar nav a')];
+const secs=links.map(l=>document.querySelector(l.getAttribute('href')));
+window.addEventListener('scroll',()=>{
+  let cur=0;
+  secs.forEach((s,i)=>{if(s&&s.getBoundingClientRect().top<140)cur=i});
+  links.forEach((l,i)=>l.classList.toggle('on',i===cur));
+},{passive:true});
+
+// FAQ 折叠
+document.querySelectorAll('.faq .q').forEach(q=>{
+  q.addEventListener('click',()=>q.parentElement.classList.toggle('open'));
+});
+
+// 移动端目录抽屉（body 锁滚动，防止内容跟着滚）
+const menuBtn=document.getElementById('menuBtn');
+const sidebar=document.getElementById('sidebar');
+const scrim=document.getElementById('scrim');
+function openDrawer(){sidebar.classList.add('open');scrim.classList.add('show');menuBtn.classList.add('open');document.body.classList.add('drawer-open')}
+function closeDrawer(){sidebar.classList.remove('open');scrim.classList.remove('show');menuBtn.classList.remove('open');document.body.classList.remove('drawer-open')}
+menuBtn.addEventListener('click',()=>sidebar.classList.contains('open')?closeDrawer():openDrawer());
+scrim.addEventListener('click',closeDrawer);
+const drawerClose=document.getElementById('drawerClose');
+if(drawerClose)drawerClose.addEventListener('click',closeDrawer);
+links.forEach(l=>l.addEventListener('click',()=>{if(window.innerWidth<=960)closeDrawer()}));
+window.addEventListener('resize',()=>{if(window.innerWidth>960)closeDrawer()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDrawer()});
+</script>
+</body>
+</html>

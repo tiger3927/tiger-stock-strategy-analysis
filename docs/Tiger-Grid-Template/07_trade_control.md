@@ -22,36 +22,33 @@
 
 > **注意：** 若 AI 希望保持固定仓位，建议此参数设为 False。
 
-### `max_position_ratio` 的拦截
-
-`do_set_target_pos()` 中强制检查：若 `target_pos > get_all_canbuy_volume(max_position_ratio)`，则截断至上限。
-
 ---
 
 ## 二、`set_target_pos()` 风控链（完整流程）
 
 ```
-set_target_pos(target_pos)
-  ├── 1. 交易时段检查：非交易时段 → 拒绝
-  ├── 2. 仓位无变化：target_pos == pos → 拒绝
-  ├── 3. AI 冷却期：上次被拒的相同 target_pos 在 3 分钟内 → 拒绝
-  ├── 4. 亏损平仓人工审核：loss_close_need_manual=True 且亏损且想平仓 → 拒绝
-  ├── 5. 首仓价格区间：pos=0 且 enable_first_allow_prices → 检查价格是否在 [min, max]
-  ├── 6. 禁止追高/追低：enable_allow_price_high → 检查当前价是否越线
-  ├── 7. OpenClaw 拒绝记录：上轮被拒的同方向调仓 → 拒绝（冷却期内）
-  ├── 8. AI 审核模式：enable_openclaw_confirm_target_pos=True → 提交 AI 等待审核
-  └── 通过 → do_set_target_pos(target_pos)
-                  └── max_position_ratio 上限拦截
-
-
-do_set_target_pos()
-  ├── 根据 max_position_ratio 计算最大可持仓量，截断 target_pos
-  ├── 设置 target_timestamp、target_delay_minute、target_allow_price
-  ├── 记录日志（含当前盈亏方向和原因）
-  └── trade() 在下个循环中执行
+set_target_pos(target_pos, ..., manual=False)
+  ├── 1. 交易时段检查：策略未启动 / 美股非交易时段（美股盘中交易=True） → 拒绝
+  ├── 2. 仓位无变化：target_pos == pos → 跳过
+  ├── 3. 目标去重：target_pos == 当前 target_pos → 跳过（重复提交相同目标无效）
+  ├── 4. 人工作业层介入：loss_close_need_manual=True（人工设置）且亏损且 target_pos=0 → 拒绝
+  │      （人工作业层控制参数，智能体不可设置；manual=True 人工操作不受此步约束）
+  ├── 5. 首仓价格区间（仅 pos=0，按方向单向检查）：
+  │      开多：价格 > 首仓最高价 → 拒绝；开空：价格 < 首仓最低价 → 拒绝
+  ├── 6. 禁止追高/追低（仅持仓时有效）：
+  │      持多仓且价格 ≥ 红线 → 拒绝加仓；持空仓且价格 ≤ 红线 → 拒绝加仓
+  │      （减仓/平仓不拦截；空仓开仓不检查）
+  ├── 7. AI 拒绝冷却：相同调仓（同持仓→同目标）5 分钟内被 AI 审核拒绝过 → 忽略
+  ├── 8. AI 审核：enable_openclaw_confirm_target_pos=True（且 manual=False）
+  │      → 提交 AI 审核，同意后执行 do_set_target_pos()；拒绝则进入第 7 步冷却
+  └── 通过 → do_set_target_pos()
+              记录 target_pos、起始时间、允许滑点（默认按当前价 ±0.5%）
+              trade() 在下个 tick/bar 中实际下单（超时/超滑点则放弃调仓）
 ```
 
-> **变盘陷阱：** 第 4 步的 `loss_close_need_manual` 在趋势反转时可能成为障碍——它会拦截所有 `set_target_pos(0)` 调用（包括止损平仓、CCI减仓、子类主动平仓）。变盘防御场景下务必设为 `False`。详见 [`10_reversal_handling.md`](10_reversal_handling.md)。
+> **`manual=True`：** 人工操作入口，绕过第 4 步人工作业层介入（`loss_close_need_manual`）和第 8 步 AI 审核。
+>
+> **变盘陷阱：** 第 4 步的人工作业层介入（`loss_close_need_manual=True`，人工设置）在趋势反转时可能成为障碍——开启时会拦截所有 `set_target_pos(0)` 调用（包括止损平仓、CCI减仓、策略信号平仓）。变盘防御场景下需**人工**将其关闭，智能体无法设置也不应绕过。详见 [`10_reversal_handling.md`](10_reversal_handling.md)。
 
 ---
 
@@ -66,6 +63,5 @@ do_set_target_pos()
 | **进攻型（跌加涨也加）** | `enable_martin_add_loss=True`, `enable_martin_add_profit=True` | — | 双向加仓，仓位持续扩大 |
 | **保守型（只止盈止损）** | 所有 `enable_martin_*` = False, `enable_stop_*` = True | `profit_radio=0.06`, `loss_radio=0.02` | 赚 6% 止盈，亏 2% 止损 |
 | **移动止盈保护利润** | `enable_stop_autoprofit=True` | `start_radio=0.05`, `back_maxvalue=0.02` | 赚 5% 后开始保护，回撤 2% 即走 |
-| **空仓等信号入场** | `enable_martin_add_open=True` | — | AI/子类设定 base_direction 后自动入场 |
-| **金字塔进攻（亏损场景）** | `martin_add_pyramid=True`, `enable_martin_add_loss=True` | `pyramid_radio=0.1` | 第 1 格加 100 股，第 5 格加 150 股 |
-| **一次性建仓** | `first_part=1.0`, `max_position_ratio=1.0` | — | 全仓进出，不补仓 |
+| **空仓等信号入场** | `enable_martin_add_open=True` | — | 设定 `base_direction` 后自动入场 |
+| **一次性建仓** | `first_part=1.0` | — | 全仓进出，不补仓（网格加仓量自然为 0） |

@@ -41,7 +41,7 @@ on_bar()（每分钟，低速）
 | ATR 止损 | `enable_atr_stop_loss=True` | `atr_stop_price = close - ATR(14) × atr_loss_multiple`（独立变量） |
 | ATR 止盈 | `enable_atr_stop_profit=True` | `atr_profit_price = close + (stop_profit_ratio/stop_loss_ratio) × ATR(14) × atr_loss_multiple`（独立变量） |
 
-**核心原则：** 所有价格都向**保守方向**更新（做多时 low_stop_price 只升不降，high_stop_price 只降不升）。
+**核心原则：** 止盈止损价只向**利润保护方向**更新，不反向回落——做多时 `high_stop_price` 和 `low_stop_price` 都只上移（止盈线与止损线不断抬高）；做空时两者都只下移。
 
 **做空时（pos < 0）：** 逻辑对称，方向相反。
 
@@ -53,7 +53,7 @@ ATR 系统使用**独立变量** `atr_stop_price` / `atr_profit_price`，不与 
 
 | 特性 | 说明 |
 |:--|:--|
-| 止损幅度 | ATR(14) × `atr_loss_multiple`（默认 12 倍） |
+| 止损幅度 | ATR(`atr_loss_period`) × `atr_loss_multiple`（默认 12 倍）；若当根 K 线高-低振幅大于该幅度，则自动放大为 1.5 倍，避免止损贴得太近 |
 | 止盈幅度 | 止损幅度 × (`stop_profit_radio` / `stop_loss_radio`) |
 | 锚定价格 | 当前 K 线收盘价 `close`（非 `pos_price`） |
 | K 线周期 | `use_1m_5m_15m_30m_60m` 指定的主周期 |

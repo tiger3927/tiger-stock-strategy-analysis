@@ -1,6 +1,6 @@
 # 09 — 典型场景参数配置
 
-> 每个场景提供完整的 AI 返回 JSON 参考。子类可根据自己的 JSON 协议调整字段名和结构。
+> 每个场景提供完整的 AI 返回 JSON 参考（推荐协议，见 04 第四节）。不同策略的 JSON 协议可能略有差异，以该策略的实际解析行为为准。
 > ⚠️ `target_pos` 的具体数值需根据实际资金、价格计算，以下仅为示例。
 
 ---
@@ -24,9 +24,7 @@
     "enable_atr_stop_loss": true,
     "enable_atr_stop_profit": true,
     "enable_stop_autoprofit": false,
-    "atr_loss_multiple": 12,
     "first_part": 0.2,
-    "max_position_ratio": 1.0,
     "enable_martin_add_loss": false,
     "enable_martin_add_profit": false,
     "enable_martin_sub_base": false,
@@ -72,7 +70,6 @@
     "martin_grid_profit": 0.02,
     "martin_sub_part": 0.33,
     "first_part": 0.15,
-    "max_position_ratio": 0.75,
     "enable_first_allow_prices": true,
     "first_allow_price_min": 150.0,
     "first_allow_price_max": 155.0,
@@ -83,11 +80,10 @@
 ```
 
 **为什么这样设：**
-- 震荡中每跌 2.5% 加一档（最多 6 档），反弹 2% 就卖一档，赚取网格差价
-- 首仓 15% 资金，留 85% 作网格弹药
+- 震荡中每跌 2.5% 加一档（切 6 档），反弹 2% 就卖一档，赚取网格差价
+- 首仓 15% 资金，留 85% 作网格弹药；每格量 = 剩余资金 ÷ 6，加仓总幅度天然受资金约束
 - 止损 4%：防震荡变单边下跌
 - 价格保护限制首仓区间，防止高位接盘
-- `max_position_ratio=75%`：留 25% 应急
 
 ---
 
@@ -117,22 +113,22 @@
 }
 ```
 
-> 或者 AI 直接不做任何操作，不调用 `set_target_pos()`。子类在 `on_openclaw_analysis_result()` 中判断 `target_pos == 0` 时不操作。
+> 或者 AI 直接不做任何调仓操作；策略代码解析 AI 结果时若 `target_pos == 0`（无调仓请求），不发起调仓。
 
 ---
 
-## 场景 4：激进金字塔进攻（突破前高 / 放量加速）
+## 场景 4：盈利加仓进攻（突破前高 / 放量加速）
 
 **判断条件：** 价格突破关键阻力位、放量、趋势加速
 
-**策略思路：** 金字塔加仓（越涨越加、越加越多），移动止盈快速保护利润。
+**策略思路：** 等份额网格加仓顺趋势追击，移动止盈快速保护利润。
 
 ```json
 {
   "direction": "多",
   "base_direction": 1,
   "target_pos": 100,
-  "reason": "价格突破前高，成交量放大2倍，趋势加速，金字塔模式加仓",
+  "reason": "价格突破前高，成交量放大2倍，趋势加速，开启盈利加仓顺趋势追击",
   "market_judgment": "上升趋势（加速）",
   "parameters": {
     "enable_stop_profit": false,
@@ -146,20 +142,17 @@
     "enable_martin_add_loss": false,
     "martin_grid_distance": 0.025,
     "martin_add_count": 8,
-    "martin_add_pyramid": true,
-    "martin_add_pyramid_radio": 0.12,
     "enable_martin_sub_base": false,
     "enable_martin_sub": false,
-    "first_part": 0.2,
-    "max_position_ratio": 1.0
+    "first_part": 0.2
   }
 }
 ```
 
 **为什么这样设：**
-- 金字塔模式（盈利场景）：第 1 格加基准量 × (1-0.12×1)=88%，第 5 格加基准量 × (1-0.12×5)=40%（越涨加仓量越少）
+- 盈利加仓：等份额顺趋势追击（每格量 = 剩余资金 ÷ 8），追涨不恐高
 - 移动止盈：赚 5% 后启动保护，回撤 2% 就平仓
-- 盈利加仓：顺趋势追击，追涨不恐高
+- 不加亏损仓：趋势加速期不摊平，只顺势加
 
 ---
 
@@ -190,8 +183,7 @@
     "enable_martin_add_profit": false,
     "enable_martin_sub_base": false,
     "enable_martin_sub": false,
-    "first_part": 0.2,
-    "max_position_ratio": 1.0
+    "first_part": 0.2
   }
 }
 ```
@@ -230,15 +222,13 @@
     "enable_martin_add_profit": false,
     "enable_martin_sub_base": false,
     "enable_martin_sub": false,
-    "first_part": 1.0,
-    "max_position_ratio": 1.0
+    "first_part": 1.0
   }
 }
 ```
 
 **为什么这样设：**
-- `first_part=1.0` → 全部资金用于首仓，`(1 - first_part) = 0`，网格加仓量为 0
-- `max_position_ratio=1.0` → 允许满仓
+- `first_part=1.0` → 全部资金用于首仓，`(1 - first_part) = 0`，网格加仓量自然为 0，等价一次性建仓
 - 只用止盈止损控制风险，回撤到阈值自动平仓
 
 ---
@@ -250,7 +240,7 @@
 | 趋势做多 | ATR 动态 | 关闭 | `first_part=0.2` | 均线多头、EMA 金叉 |
 | 震荡低吸高抛 | 仅止损 4% | 开启加减 | `first_part=0.15` | 布林带收窄、CCI 振荡 |
 | 空仓观察 | 关闭 | 关闭 | `target_pos=0` | 无信号、事件前 |
-| 金字塔进攻 | 移动止盈 | 金字塔盈利加 | `first_part=0.2` | 突破、放量、加速 |
+| 盈利加仓进攻 | 移动止盈 | 等份额盈利加仓 | `first_part=0.2` | 突破、放量、加速 |
 | 保守防守 | 三套全开 | 关闭 | 不变 | 已有利润、不确定性高 |
 | 一次性建仓 | 三套全开 | 关闭 | `first_part=1.0` | 任意（用户偏好） |
 

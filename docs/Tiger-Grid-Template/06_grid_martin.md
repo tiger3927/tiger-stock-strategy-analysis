@@ -5,9 +5,9 @@
 
 ---
 
-## 一、统一前置检查
+## 一、前置闸门（每段执行前检查）
 
-所有加减仓动作前有一道闸门：
+每段逻辑在真正调用 `set_target_pos()` 前都有一道闸门：
 
 ```
 if self.target_pos == self.pos:
@@ -15,7 +15,7 @@ if self.target_pos == self.pos:
     self.set_target_pos(...)
 ```
 
-即：如果 `set_target_pos()` 刚被调用、订单尚未成交（`target_pos ≠ pos`），网格加减仓**暂停**。
+即：如果主方向调仓刚被设定、尚未成交（`target_pos ≠ pos`），该段的网格加减仓**暂停**；成交后恢复。
 
 ---
 
@@ -37,6 +37,8 @@ if self.target_pos == self.pos:
           （不再区分盈亏状态，由 enable_martin_sub 统一控制）
     量：累加所有达标的网格仓量
 ```
+
+> **优先级：** 两者按顺序尝试——先减基础底仓，若减到量 > 0，本轮就不再减网格仓。
 
 **关键参数：**
 
@@ -74,11 +76,12 @@ if self.target_pos == self.pos:
 | `martin_add_count` | 最大网格数（10 = 最多加 10 次） |
 | `first_open_price` | 网格基准价（首次开仓价，后续不变） |
 
-**等份额模式（`martin_add_pyramid=False`）：** 每格加仓量 = `get_martin_add_volume()` = 剩余资金 / `martin_add_count`
+**每格加仓量：** `get_martin_add_volume()` = 剩余资金 / `martin_add_count`（等份额切分，总加仓幅度由资金天然约束）
 
-**金字塔模式（`martin_add_pyramid=True`）：** 根据盈亏方向自动调整加仓量：
-- **亏损时**：加仓量 = `get_martin_add_volume()` × `(1 + martin_add_pyramid_radio × 已触发格数)`，越跌加越多
-- **盈利时**：加仓量 = `get_martin_add_volume()` × `(1 - martin_add_pyramid_radio × 已触发格数)`，越涨加仓量越少（经典金字塔）
+**加仓的自动控制前置（代码内置，无需参数设置，策略自动遵守）：**
+即使价格已到达下一格，还必须同时满足以下两点才真正加仓：
+1. **动作间隔控制**：距上一次网格动作（加仓/开仓）至少间隔 `成交等待分钟数 + 1` 分钟，避免网格动作过于密集；
+2. **CCI 方向一致**：加仓时刻的 CCI 方向信号必须与加仓方向一致（做多加仓需 CCI 向上信号、做空加仓需 CCI 向下信号），防止在错误方向上追单。
 
 ---
 
@@ -90,6 +93,8 @@ if self.target_pos == self.pos:
 
 **关键参数：** `enable_martin_add_profit` — 盈利时顺着趋势加仓（开 = 涨了还敢加）。
 
+> 同样受"加仓的自动控制前置"约束（见第三段末尾：动作间隔 + CCI 方向一致）。
+
 ---
 
 ## 五、第四段：主动开仓（空仓时）
@@ -98,7 +103,7 @@ if self.target_pos == self.pos:
 
 顺着 `base_direction` 方向开仓，量为 `get_fixed_volume()`。
 
-> **注意：** `base_direction` 由子类的信号或 AI 结果设定。若 `base_direction = 0`，此段不执行。
+> **注意：** `base_direction` 由策略信号或 AI 分析结果设定。若 `base_direction = 0`，此段不执行。
 
 **关键参数：** `enable_martin_add_open` — 空仓时自动开仓（开 = AI 设定方向后自动入场）。
 
@@ -109,8 +114,8 @@ if self.target_pos == self.pos:
 ```
 martin_add_sub() 每 bar 一次，按顺序：
   ┌─────────────────────────────────────┐
-  │ 前置闸门: target_pos == pos?         │
-  │   No → 跳过全部加减仓               │
+  │ 每段调用 set_target_pos 前检查:     │
+  │   target_pos == pos?  No → 该段暂停 │
   ├─────────────────────────────────────┤
   │ ① 减仓：CCI 反向 → 减基础/减网格   │
   │ ② 亏损加仓：价破网格线 → 加一档    │
@@ -121,4 +126,5 @@ martin_add_sub() 每 bar 一次，按顺序：
 
 - 四段**顺序执行**，同一 bar 可能先触发减仓再触发加仓
 - 但新建网格仓有 `martin_grid_profit` 保护，不会被立即减掉
-- AI 设置的 target_pos 通过前置闸门暂停所有网格操作
+- 主方向 target_pos 未成交前，所有网格操作通过前置闸门暂停
+- ②③④ 触发时还需满足"加仓的自动控制前置"（动作间隔 + CCI 方向一致）
