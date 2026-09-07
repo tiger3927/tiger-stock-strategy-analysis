@@ -10,7 +10,7 @@
 |:--|:--|:--|
 | `get_fixed_volume()` | 首仓/主动开仓量 | `(start_asset + total_v) × first_part / tick_price` |
 | `get_martin_add_volume()` | 每格加仓量 | `(start_asset + total_v) × (1 - first_part) / martin_add_count / tick_price` |
-| `get_open_pos_sub_volume()` | 基础底仓减仓量 | `(start_asset + total_v) × first_part × martin_sub_part / tick_price` |
+| `get_open_pos_sub_volume()` | 基础底仓减仓量 | `(start_asset + total_v) × first_part × martin_sub_base_part / tick_price` |
 | `get_all_canbuy_volume(ratio)` | 最大可持仓量 | `(start_asset + total_v) × ratio / tick_price` |
 
 ### `volume_change_with_v` 的影响
@@ -31,24 +31,29 @@ set_target_pos(target_pos, ..., manual=False)
   ├── 1. 交易时段检查：策略未启动 / 美股非交易时段（美股盘中交易=True） → 拒绝
   ├── 2. 仓位无变化：target_pos == pos → 跳过
   ├── 3. 目标去重：target_pos == 当前 target_pos → 跳过（重复提交相同目标无效）
-  ├── 4. 人工作业层介入：loss_close_need_manual=True（人工设置）且亏损且 target_pos=0 → 拒绝
+  ├── 4. 近期 pending 去重：180 秒内上一次 pending 目标与本次相同 → 跳过
+  ├── 5. 人工作业层介入：loss_close_need_manual=True（人工设置）且亏损且 target_pos=0 → 拒绝
   │      （人工作业层控制参数，智能体不可设置；manual=True 人工操作不受此步约束）
-  ├── 5. 首仓价格区间（仅 pos=0，按方向单向检查）：
+  ├── 6. 首仓价格区间（仅 pos=0，按方向单向检查）：
   │      开多：价格 > 首仓最高价 → 拒绝；开空：价格 < 首仓最低价 → 拒绝
-  ├── 6. 禁止追高/追低（仅持仓时有效）：
+  ├── 7. 禁止追高/追低（仅持仓时有效）：
   │      持多仓且价格 ≥ 红线 → 拒绝加仓；持空仓且价格 ≤ 红线 → 拒绝加仓
   │      （减仓/平仓不拦截；空仓开仓不检查）
-  ├── 7. AI 拒绝冷却：相同调仓（同持仓→同目标）5 分钟内被 AI 审核拒绝过 → 忽略
-  ├── 8. AI 审核：enable_openclaw_confirm_target_pos=True（且 manual=False）
-  │      → 提交 AI 审核，同意后执行 do_set_target_pos()；拒绝则进入第 7 步冷却
+  ├── 8. 平仓冷却期 ⚠️：close_cooldown_hours>0（默认 48）且空仓且开新仓
+  │      且距上次平仓未超冷却期且与上次平仓同方向 → 拒绝（反方向开仓不拦截）
+  ├── 9. AI 拒绝冷却：相同调仓（同持仓→同目标）5 分钟内被 AI 审核拒绝过 → 忽略
+  ├── 10. AI 审核：enable_openclaw_confirm_target_pos=True（且 manual=False）
+  │      → 提交 AI 审核，同意后执行 do_set_target_pos()；拒绝则进入第 9 步冷却
   └── 通过 → do_set_target_pos()
               记录 target_pos、起始时间、允许滑点（默认按当前价 ±0.5%）
               trade() 在下个 tick/bar 中实际下单（超时/超滑点则放弃调仓）
 ```
 
-> **`manual=True`：** 人工操作入口，绕过第 4 步人工作业层介入（`loss_close_need_manual`）和第 8 步 AI 审核。
+> **`manual=True`：** 人工操作入口，绕过第 5 步人工作业层介入（`loss_close_need_manual`）和第 10 步 AI 审核。
 >
-> **变盘陷阱：** 第 4 步的人工作业层介入（`loss_close_need_manual=True`，人工设置）在趋势反转时可能成为障碍——开启时会拦截所有 `set_target_pos(0)` 调用（包括止损平仓、CCI减仓、策略信号平仓）。变盘防御场景下需**人工**将其关闭，智能体无法设置也不应绕过。详见 [`10_reversal_handling.md`](10_reversal_handling.md)。
+> **⚠️ 平仓冷却期（第 8 步）是"调仓未生效"最常见的隐藏原因：** 平仓后 `close_cooldown_hours`（默认 48 小时）内禁止**同方向**开新仓。智能体若发现设置开仓目标后未下单、且策略最近刚平过仓，优先排查此项（人工参数，智能体不可改；需缩短/关闭时由人工设为 0）。
+>
+> **变盘陷阱：** 第 5 步的人工作业层介入（`loss_close_need_manual=True`，人工设置）在趋势反转时可能成为障碍——开启时会拦截所有 `set_target_pos(0)` 调用（包括止损平仓、信号平仓）。变盘防御场景下需**人工**将其关闭，智能体无法设置也不应绕过。详见 [`10_reversal_handling.md`](10_reversal_handling.md)。
 
 ---
 

@@ -6,11 +6,11 @@
 get_market_data.py（yfinance）完成，本脚本只负责读写 JSON，不调用外部接口。
 
 用法:
-    E:\\veighna_studio_43\\python.exe skills/tiger-stock-strategy-analysis/scripts/update_vt_symbol.py query --ticker TSLA
-    E:\\veighna_studio_43\\python.exe skills/tiger-stock-strategy-analysis/scripts/update_vt_symbol.py add --vt-symbol 265598.SMART --name Apple --name-cn 苹果 --ticker AAPL --conid 265598 --category 科技巨头 --industry "信息技术" --priority high
-    E:\\veighna_studio_43\\python.exe skills/tiger-stock-strategy-analysis/scripts/update_vt_symbol.py update --vt-symbol 265598.SMART --conid 265598 --name-cn 苹果
-    E:\\veighna_studio_43\\python.exe skills/tiger-stock-strategy-analysis/scripts/update_vt_symbol.py delete --vt-symbol 265598.SMART
-    E:\\veighna_studio_43\\python.exe skills/tiger-stock-strategy-analysis/scripts/update_vt_symbol.py list
+    python.exe skills/tiger-stock-strategy-analysis/scripts/update_vt_symbol.py query --ticker TSLA
+    python.exe skills/tiger-stock-strategy-analysis/scripts/update_vt_symbol.py add --vt-symbol 265598.SMART --name Apple --name-cn 苹果 --ticker AAPL --conid 265598 --category 科技巨头 --industry "信息技术" --priority high
+    python.exe skills/tiger-stock-strategy-analysis/scripts/update_vt_symbol.py update --vt-symbol 265598.SMART --conid 265598 --name-cn 苹果
+    python.exe skills/tiger-stock-strategy-analysis/scripts/update_vt_symbol.py delete --vt-symbol 265598.SMART
+    python.exe skills/tiger-stock-strategy-analysis/scripts/update_vt_symbol.py list
 
 字段说明:
     vt_symbol: 策略使用的品种代码（如 265598.SMART），JSON 的 key

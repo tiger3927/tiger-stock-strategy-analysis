@@ -1,7 +1,7 @@
 # 03 — 变量列表与状态上报
 
-> 运行时自动计算记录的 13 个变量。`上报名` = `_build_status_dict()` 中向 AI/Redis 上报时使用的名称，`—` = 不在状态字典中暴露（但系统内部仍然使用）。
-> 基类还维护若干内部变量（平仓冷静期时间戳、参数来源、AI 拒绝记录等），智能体无需关注，也不对外暴露。
+> 运行时自动计算记录的 16 个变量。`上报名` = `_build_status_dict()` 中向 AI/Redis 上报时使用的名称，`—` = 不在状态字典中暴露（但系统内部仍然使用）。
+> 基类还维护若干其他内部变量（AI 拒绝记录等），智能体无需关注，也不对外暴露。
 
 ---
 
@@ -22,6 +22,9 @@
 | `target_delay_minute` | — | 本次调仓容忍的最大延迟分钟数 |
 | `target_allow_price` | — | 本次调仓允许的最大滑点价格（默认按当前价 ±0.5%） |
 | `poschange` | `已有网格仓数量`（`len()`） | 当前持仓的加建仓成交历史记录 |
+| `close_cooldown_until` | — | 平仓冷却期截止时间戳；平仓后 `close_cooldown_hours` 小时内同方向开仓被拦截（见 07 风控链第 8 步） |
+| `close_cooldown_direction` | — | 最近一次平仓的方向（1=平多 / -1=平空 / 0=无），决定冷却期拦截哪个方向的开仓 |
+| `param_source` | — | 参数来源治理表（参数名 → source/reason/ts），供分层复位与 AI 决策上下文使用 |
 
 ---
 
@@ -51,7 +54,7 @@
 | 上报名 | 变量名 | 说明 |
 |:--|:--|:--|
 | `主信号K线周期(分钟数)` | `use_1m_5m_15m_30m_60m` | 策略主 K 线周期 |
-| `最小交易量单位` | `volume_min_unit` | 最小交易股数 |
+| `最小交易单位` | `volume_min_unit` | 最小交易股数 |
 | `杠杆(合约乘数)` | `trade_radio` | 杠杆倍数 |
 | `可用资金总量` | `start_asset + total_v` | 启动资金 + 累计盈亏 |
 | `建议首仓占比` | `first_part` | 首仓占用资金比例 |
@@ -68,12 +71,13 @@
 | `是否允许盈利时网格加仓` | `enable_martin_add_profit` | 盈利时网格加仓开关 |
 | `是否允许亏损时网格加仓` | `enable_martin_add_loss` | 亏损时网格加仓开关 |
 | `网格间距` | `martin_grid_distance` | 网格加仓价格间距 |
-| `网格数量` | `martin_add_count` | 最大加仓次数 |
+| `网格数量` | `martin_add_count` | 剩余资金切分的格数（决定每格交易量，不是加仓次数硬上限） |
 | `是否允许卖出基础底仓` | `enable_martin_sub_base` | 允许减基础底仓（仅盈利时） |
 | `是否允许网格减仓` | `enable_martin_sub` | 允许减盈利网格仓（统一开关，不区分盈亏状态） |
 | `网格止盈` | `martin_grid_profit` | 网格仓需盈利多少才允许减仓 |
+| `亏损平仓人工审批` | `loss_close_need_manual` | 亏损平仓人工审批开关（人工作业层控制参数） |
 
-> 说明：ATR 动态止盈止损的开关/数值、`martin_sub_part`、`allow_price_high` 等不在状态字典中上报，若 AI 上报数据中缺失属正常。
+> 说明：ATR 动态止盈止损的 4 个参数（`enable_atr_stop_loss/profit`、`atr_loss_period/multiple`）**只在订单审核状态字典**（`_build_confirm_status_dict`，AI 审核下单时可见）中上报，**分析状态字典**（`_build_status_dict`，定时分析时可见）中不上报；`martin_sub_base_part`、`allow_price_high`、`first_allow_price_min/max` 等不在任何状态字典中上报，若 AI 上报数据中缺失属正常。
 > 不同策略可能向状态字典追加各自的自定义字段，智能体遇到未知字段时当作参考信息处理即可。
 
 > **快照特性：** 输出是调用时刻的快照，不是实时流。AI 应基于快照分析，不考虑调用期间的微小价格变化。

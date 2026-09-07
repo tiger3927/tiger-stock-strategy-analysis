@@ -28,7 +28,7 @@ if self.target_pos == self.pos:
 ```
 ├─ 尝试减基础底仓
 │   条件：enable_martin_sub_base=True 且 盈亏比 > martin_grid_profit
-│   量：get_open_pos_sub_volume() = 资金 × first_part × martin_sub_part
+│   量：get_open_pos_sub_volume() = 资金 × first_part × martin_sub_base_part
 │
 └─ 尝试减网格仓
     条件：enable_martin_sub=True
@@ -46,7 +46,7 @@ if self.target_pos == self.pos:
 |:--|:--|
 | `enable_martin_sub_base` | 盈利时能否卖基础底仓 |
 | `enable_martin_sub` | 允许减盈利网格仓（统一开关，不区分盈亏状态） |
-| `martin_sub_part` | 每次减仓比例（0.33 = 每次减 1/3 基础仓） |
+| `martin_sub_base_part` | 每次减仓比例（0.33 = 每次减 1/3 基础仓） |
 | `martin_grid_profit` | 网格仓需盈利多少才允许减（0.03 = 3%） |
 
 > **注意：** 新建立的网格仓不会被立即卖出——必须等该网格仓盈利超过 `martin_grid_profit` 后才允许减仓。
@@ -73,7 +73,7 @@ if self.target_pos == self.pos:
 |:--|:--|
 | `enable_martin_add_loss` | 亏损时自动加仓（开 = 跌破网格线自动补仓） |
 | `martin_grid_distance` | 网格间距（0.03 = 每 3% 设一档） |
-| `martin_add_count` | 最大网格数（10 = 最多加 10 次） |
+| `martin_add_count` | 剩余资金切分的格数，决定每格交易量（不是加仓次数的硬上限；加仓总幅度由全部可用资金约束） |
 | `first_open_price` | 网格基准价（首次开仓价，后续不变） |
 
 **每格加仓量：** `get_martin_add_volume()` = 剩余资金 / `martin_add_count`（等份额切分，总加仓幅度由资金天然约束）

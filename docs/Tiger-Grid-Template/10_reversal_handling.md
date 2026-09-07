@@ -63,7 +63,7 @@
 
 注意：CCI 指标周期是 `cci_martin_period`（默认 35），在网格 K 线周期（`martin_k_time`）上计算；上面的扫描窗口是 `target_delay_minute_max` 根 bar，两者不是同一个参数。
 
-然后在 `martin_add_sub()` 中（[src](file:///d:/Code/Python/Trading/vnpy_test/strategies/tiger_grid_template.py#L4444-L4604)）：
+然后在 `martin_add_sub()` 中（`strategies/tiger_grid_template.py`）：
 
 ```
 if direction × pos < 0:      ← CCI方向与持仓方向相反
@@ -78,7 +78,7 @@ if direction × pos < 0:      ← CCI方向与持仓方向相反
 | **CCI 滞后性** | CCI 需要跌穿 100 线才发出方向信号，此时价格可能已跌了不止3% | 减仓触发时亏损可能已超过止损线 |
 | **微利时无法减基础底仓** | 减基础底仓要求 `盈利 > martin_grid_profit`（默认3%） | 若开仓后微利1%~2%即反转，CCI方向已反但基础底仓不减 |
 | **网格减仓被全局关闭** | `enable_martin_sub=False` 时，所有网格减仓被禁止（无论盈亏） | 仓位无法通过 CCI 减仓主动降低，只能硬扛到止损 |
-| **人工作业层介入** | 所有平仓/减仓动作最终调用 `set_target_pos()`，`loss_close_need_manual=True`（人工设置）时亏损平仓被拦截（智能体不可设置/绕过） | 只能由人工将其关闭或人工处理 |
+| **人工作业层介入** | 所有平仓动作最终调用 `set_target_pos()`，`loss_close_need_manual=True`（人工设置）时亏损状态下的**全平**（target_pos=0）被拦截，部分减仓（target_pos≠0）不受拦截（智能体不可设置/绕过） | 只能由人工将其关闭或人工处理 |
 
 ---
 
@@ -116,7 +116,7 @@ if direction × pos < 0:      ← CCI方向与持仓方向相反
     "enable_martin_sub_base": true,
     "enable_martin_sub": true,
     "martin_grid_profit": 0.01,
-    "martin_sub_part": 1.0,
+    "martin_sub_base_part": 1.0,
     "enable_martin_add_open": false,
     "first_part": 0.2
   }
@@ -126,7 +126,7 @@ if direction × pos < 0:      ← CCI方向与持仓方向相反
 **为什么这样设：**
 
 - **前置确认**：`loss_close_need_manual` 需为 False（人工作业层介入关闭；人工设置，智能体无法修改），否则亏损平仓会被拦截
-- `martin_sub_part=1.0`：CCI确认反向后一次全部减仓（不保留底仓）
+- `martin_sub_base_part=1.0`：CCI确认反向后一次全部减仓（不保留底仓）
 - `martin_grid_profit=0.01`：降低基础底仓减仓门槛，微利也减
 - `enable_martin_sub=True`：允许减网格仓（防止越陷越深）
 - `enable_martin_add_loss=False`：趋势已转，不再抄底
@@ -155,7 +155,7 @@ if direction × pos < 0:      ← CCI方向与持仓方向相反
     "enable_martin_sub_base": true,
     "enable_martin_sub": true,
     "martin_grid_profit": 0.00,
-    "martin_sub_part": 1.0,
+    "martin_sub_base_part": 1.0,
     "enable_martin_add_open": false,
     "first_part": 0.2
   }
@@ -166,7 +166,7 @@ if direction × pos < 0:      ← CCI方向与持仓方向相反
 
 - `enable_martin_add_loss=False`：**核心**——停止亏损加仓，不再摊平
 - `martin_grid_profit=0.00`：网格仓无条件减仓（不等盈利，不抱幻想）
-- `martin_sub_part=1.0`：一次全部减仓
+- `martin_sub_base_part=1.0`：一次全部减仓
 - `enable_martin_sub=True`：允许减网格仓
 - `stop_loss_radio=0.05`：放宽止损线（因为已持有网格仓位，成本较高），作为保底
 
@@ -193,7 +193,7 @@ if direction × pos < 0:      ← CCI方向与持仓方向相反
     "enable_martin_sub_base": true,
     "enable_martin_sub": false,
     "martin_grid_profit": 0.02,
-    "martin_sub_part": 0.33,
+    "martin_sub_base_part": 0.33,
     "first_part": 0.2
   }
 }
@@ -210,7 +210,7 @@ if direction × pos < 0:      ← CCI方向与持仓方向相反
 
 ## 五、人工作业层介入（loss_close_need_manual）的变盘盲区
 
-策略代码内置一道**人工层硬约束**——参数 `loss_close_need_manual`（人工作业层控制参数，智能体不可设置、不可复位，见 02 文档第七节）：人工将其设为 True 后，亏损状态下**一切**平仓路径（止损平仓、CCI 减仓、信号平仓，即所有 `set_target_pos(0)` 路径）都会被拦截，只有人工操作（`manual=True`）可以执行平仓。
+策略代码内置一道**人工层硬约束**——参数 `loss_close_need_manual`（人工作业层控制参数，智能体不可设置、不可复位，见 02 文档第七节）：人工将其设为 True 后，亏损状态下**一切**全平路径（止损平仓、信号平仓，即所有 `set_target_pos(0)` 调用）都会被拦截，部分减仓（target_pos≠0）不受拦截，只有人工操作（`manual=True`）可以执行平仓。
 
 它的设计意图是**人为扛住极端行情/巨大亏损**——防止智能体或程序在恐慌中自动平掉网格介入的大仓位，是刻意的"抗巨大亏损"选择。
 
@@ -255,7 +255,7 @@ if direction × pos < 0:      ← CCI方向与持仓方向相反
 | `enable_martin_sub_base` | `True` | CCI反向时减基础底仓 |
 | `enable_martin_sub` | `True` | CCI反向时减网格仓 |
 | `martin_grid_profit` | `0.00` ~ `0.01` | 降低减仓盈利门槛 |
-| `martin_sub_part` | `0.33` ~ `1.0` | 减仓比例（1.0=全部） |
+| `martin_sub_base_part` | `0.33` ~ `1.0` | 减仓比例（1.0=全部） |
 | `target_pos` | `0` 或 `当前×30%` | 平仓或大幅缩仓 |
 
 ---

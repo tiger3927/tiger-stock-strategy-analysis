@@ -77,7 +77,7 @@ AI 返回 JSON                                      ← 环节①：AI 分析
 | 步骤 | 方法 | 功能 | 时机 |
 |:--|:--|:--|:--|
 | ① 设定目标 | `set_target_pos()` | 风控校验（+ AI 审核，若开启）→ `do_set_target_pos()` 记录 target_pos | 策略代码调用（收到信号或 AI 分析响应时） |
-| ② 执行订单 | `trade()` | 检查冷却期 → 检查超时/滑点 → 满足条件则 `send_new_order()` | `on_tick()` 每秒一次，`on_bar()` 每分钟一次 |
+| ② 执行订单 | `trade()` | 检查冷却期 → 检查超时/滑点 → 满足条件则 `send_new_order()` | 由 `on_tick()`（每 tick，实盘）/ `on_bar()`（每根 1 分钟 bar，模拟盘）驱动，`trade()` 调用限频每秒最多 1 次 |
 | ③ 发送限价 | `send_new_order()` | 计算买卖方向，拆单，发限价单到交易所 | `trade()` 内部调用 |
 | ④ 确认成交 | `on_order()` → `on_trade()` | 更新 pos、pos_price、poschange（网格记录） | 交易所返回成交时触发 |
 

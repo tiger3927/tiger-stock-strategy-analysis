@@ -1,7 +1,8 @@
 # 09 — 典型场景参数配置
 
-> 每个场景提供完整的 AI 返回 JSON 参考（推荐协议，见 04 第四节）。不同策略的 JSON 协议可能略有差异，以该策略的实际解析行为为准。
-> ⚠️ `target_pos` 的具体数值需根据实际资金、价格计算，以下仅为示例。
+> 每个场景给出 AI 返回 JSON 中**与场景相关的参数字段**参考。
+> 现行协议为**中文键**（键名 = 参数中文标准名，代码按 name_cn 精确匹配，英文键不落地）；完整字段模板见 [`../Martingale-Grid-Trading-Strategy/00-Router.md`](../Martingale-Grid-Trading-Strategy/00-Router.md) §五。
+> 示例省略"策略阶段/操作/操作方向/三级支撑位/三级压力位/当前价格/各分位"等每轮必填字段（以 MGT §五 为准）；下单不由参数决定，而由"操作"字段（立即/择机/禁止）驱动。
 
 ---
 
@@ -13,30 +14,26 @@
 
 ```json
 {
-  "direction": "多",
-  "base_direction": 1,
-  "target_pos": 100,
-  "reason": "30分钟线EMA金叉，价格突破60均线，MACD零轴上方金叉，趋势转多头",
-  "market_judgment": "上升趋势",
-  "parameters": {
-    "enable_stop_profit": false,
-    "enable_stop_loss": false,
-    "enable_atr_stop_loss": true,
-    "enable_atr_stop_profit": true,
-    "enable_stop_autoprofit": false,
-    "first_part": 0.2,
-    "enable_martin_add_loss": false,
-    "enable_martin_add_profit": false,
-    "enable_martin_sub_base": false,
-    "enable_martin_sub": false,
-    "enable_martin_add_open": false
-  }
+  "趋势枚举": "看涨",
+  "操作方向": "多",
+  "理由": "30分钟线EMA金叉，价格突破60均线，MACD零轴上方金叉，趋势转多头",
+  "是否允许止盈": false,
+  "是否允许止损": false,
+  "是否允许ATR动态止损": true,
+  "是否允许ATR动态止盈": true,
+  "是否允许移动止盈": false,
+  "建议首仓占比": 0.2,
+  "是否允许亏损时网格加仓": false,
+  "是否允许盈利时网格加仓": false,
+  "是否允许卖出基础底仓": false,
+  "是否允许网格减仓": false,
+  "是否允许网格主动开仓": false
 }
 ```
 
 **为什么这样设：**
 - 趋势行情不用固定止盈（容易卖飞），交给 ATR 动态管理
-- ATR 止损 = 波动率 × 12，止盈 = 止损 × (9%/3%) = 3 倍止损，保持 3:1 盈亏比
+- ATR 止损 = 波动率 × 12，止盈 = 止损 × 盈亏比，保持 3:1 盈亏比
 - 不开网格加减仓，趋势中不补仓不落袋
 
 ---
@@ -49,33 +46,28 @@
 
 ```json
 {
-  "direction": "低吸高抛（震荡）",
-  "base_direction": 1,
-  "target_pos": 100,
-  "reason": "30分钟布林带缩口走平，CCI在±100之间反复，无明确趋势，开启网格模式",
-  "market_judgment": "震荡",
-  "parameters": {
-    "enable_stop_profit": false,
-    "enable_stop_loss": true,
-    "stop_loss_radio": 0.04,
-    "enable_atr_stop_loss": false,
-    "enable_atr_stop_profit": false,
-    "enable_stop_autoprofit": false,
-    "enable_martin_add_loss": true,
-    "enable_martin_add_profit": false,
-    "enable_martin_sub_base": true,
-    "enable_martin_sub": true,
-    "martin_grid_distance": 0.025,
-    "martin_add_count": 6,
-    "martin_grid_profit": 0.02,
-    "martin_sub_part": 0.33,
-    "first_part": 0.15,
-    "enable_first_allow_prices": true,
-    "first_allow_price_min": 150.0,
-    "first_allow_price_max": 155.0,
-    "enable_allow_price_high": true,
-    "allow_price_high": 160.0
-  }
+  "趋势枚举": "震荡",
+  "操作方向": "多",
+  "理由": "30分钟布林带缩口走平，CCI在±100之间反复，无明确趋势，开启网格模式",
+  "是否允许止盈": false,
+  "是否允许止损": true,
+  "止损幅度": 0.04,
+  "是否允许ATR动态止损": false,
+  "是否允许ATR动态止盈": false,
+  "是否允许移动止盈": false,
+  "是否允许亏损时网格加仓": true,
+  "是否允许盈利时网格加仓": false,
+  "是否允许卖出基础底仓": true,
+  "是否允许网格减仓": true,
+  "网格间距": 0.025,
+  "网格数量": 6,
+  "网格止盈": 0.02,
+  "基础底仓分批出货比例": 0.33,
+  "建议首仓占比": 0.15,
+  "首仓价格区间": [150.0, 155.0],
+  "是否限制首仓价格区间": true,
+  "禁止追高价格": 160.0,
+  "是否禁止追高": true
 }
 ```
 
@@ -83,7 +75,7 @@
 - 震荡中每跌 2.5% 加一档（切 6 档），反弹 2% 就卖一档，赚取网格差价
 - 首仓 15% 资金，留 85% 作网格弹药；每格量 = 剩余资金 ÷ 6，加仓总幅度天然受资金约束
 - 止损 4%：防震荡变单边下跌
-- 价格保护限制首仓区间，防止高位接盘
+- 价格保护限制首仓区间（150-155 才买），禁止追高红线 160，防止高位接盘
 
 ---
 
@@ -93,27 +85,16 @@
 
 ```json
 {
-  "direction": "中性",
-  "base_direction": 0,
-  "target_pos": 0,
-  "reason": "市场无明确方向，成交量萎缩，建议空仓观察",
-  "market_judgment": "不确定",
-  "parameters": {
-    "enable_stop_profit": false,
-    "enable_stop_loss": false,
-    "enable_atr_stop_loss": false,
-    "enable_atr_stop_profit": false,
-    "enable_stop_autoprofit": false,
-    "enable_martin_add_loss": false,
-    "enable_martin_add_profit": false,
-    "enable_martin_sub_base": false,
-    "enable_martin_sub": false,
-    "enable_martin_add_open": false
-  }
+  "策略阶段": "空仓观察",
+  "趋势枚举": "横盘",
+  "操作": "择机",
+  "操作方向": "未知",
+  "理由": "市场无明确方向，成交量萎缩，建议空仓观察"
 }
 ```
 
-> 或者 AI 直接不做任何调仓操作；策略代码解析 AI 结果时若 `target_pos == 0`（无调仓请求），不发起调仓。
+> 空仓观察阶段参数开关由阶段基线接管（三保护开关强制开，其余 AI 输出仅存档不落地），本阶段重点是"操作"不下单；此阶段"操作方向"必须为"未知"。
+> 也可输出 `操作=禁止`：不下单，且"等待首仓"阶段主动开仓开关被强制关。
 
 ---
 
@@ -125,27 +106,23 @@
 
 ```json
 {
-  "direction": "多",
-  "base_direction": 1,
-  "target_pos": 100,
-  "reason": "价格突破前高，成交量放大2倍，趋势加速，开启盈利加仓顺趋势追击",
-  "market_judgment": "上升趋势（加速）",
-  "parameters": {
-    "enable_stop_profit": false,
-    "enable_stop_loss": false,
-    "enable_atr_stop_loss": false,
-    "enable_atr_stop_profit": false,
-    "enable_stop_autoprofit": true,
-    "stop_autoprofit_start_radio": 0.05,
-    "stop_autoprofit_back_maxvalue": 0.02,
-    "enable_martin_add_profit": true,
-    "enable_martin_add_loss": false,
-    "martin_grid_distance": 0.025,
-    "martin_add_count": 8,
-    "enable_martin_sub_base": false,
-    "enable_martin_sub": false,
-    "first_part": 0.2
-  }
+  "趋势枚举": "看涨",
+  "操作方向": "多",
+  "理由": "价格突破前高，成交量放大2倍，趋势加速，开启盈利加仓顺趋势追击",
+  "是否允许止盈": false,
+  "是否允许止损": false,
+  "是否允许ATR动态止损": false,
+  "是否允许ATR动态止盈": false,
+  "是否允许移动止盈": true,
+  "移动止盈启动幅度": 0.05,
+  "移动止盈回撤幅度": 0.02,
+  "是否允许盈利时网格加仓": true,
+  "是否允许亏损时网格加仓": false,
+  "网格间距": 0.025,
+  "网格数量": 8,
+  "是否允许卖出基础底仓": false,
+  "是否允许网格减仓": false,
+  "建议首仓占比": 0.2
 }
 ```
 
@@ -164,27 +141,23 @@
 
 ```json
 {
-  "direction": "不操作（持有）",
-  "base_direction": 1,
-  "target_pos": 100,
-  "reason": "当前位置已触关键阻力，市场不确定性高，转为防守模式保护利润",
-  "market_judgment": "不确定（防守）",
-  "parameters": {
-    "enable_stop_profit": true,
-    "stop_profit_radio": 0.06,
-    "enable_stop_loss": true,
-    "stop_loss_radio": 0.02,
-    "enable_atr_stop_loss": false,
-    "enable_atr_stop_profit": false,
-    "enable_stop_autoprofit": true,
-    "stop_autoprofit_start_radio": 0.03,
-    "stop_autoprofit_back_maxvalue": 0.015,
-    "enable_martin_add_loss": false,
-    "enable_martin_add_profit": false,
-    "enable_martin_sub_base": false,
-    "enable_martin_sub": false,
-    "first_part": 0.2
-  }
+  "趋势枚举": "横盘",
+  "操作方向": "多",
+  "理由": "当前位置已触关键阻力，市场不确定性高，转为防守模式保护利润",
+  "是否允许止盈": true,
+  "止盈幅度": 0.06,
+  "是否允许止损": true,
+  "止损幅度": 0.02,
+  "是否允许ATR动态止损": false,
+  "是否允许ATR动态止盈": false,
+  "是否允许移动止盈": true,
+  "移动止盈启动幅度": 0.03,
+  "移动止盈回撤幅度": 0.015,
+  "是否允许亏损时网格加仓": false,
+  "是否允许盈利时网格加仓": false,
+  "是否允许卖出基础底仓": false,
+  "是否允许网格减仓": false,
+  "建议首仓占比": 0.2
 }
 ```
 
@@ -199,36 +172,32 @@
 
 **判断条件：** 用户偏好一次性进出、不想用网格加仓
 
-**策略思路：** `first_part=1.0` 全仓进出，只用止盈止损控制风险。
+**策略思路：** `建议首仓占比=1.0` 全仓进出，只用止盈止损控制风险。
 
 ```json
 {
-  "direction": "多",
-  "base_direction": 1,
-  "target_pos": 100,
-  "reason": "用户设置一次性建仓模式，全仓进出不做网格补仓",
-  "market_judgment": "上升趋势",
-  "parameters": {
-    "enable_stop_profit": true,
-    "stop_profit_radio": 0.09,
-    "enable_stop_loss": true,
-    "stop_loss_radio": 0.03,
-    "enable_atr_stop_loss": false,
-    "enable_atr_stop_profit": false,
-    "enable_stop_autoprofit": true,
-    "stop_autoprofit_start_radio": 0.05,
-    "stop_autoprofit_back_maxvalue": 0.02,
-    "enable_martin_add_loss": false,
-    "enable_martin_add_profit": false,
-    "enable_martin_sub_base": false,
-    "enable_martin_sub": false,
-    "first_part": 1.0
-  }
+  "趋势枚举": "看涨",
+  "操作方向": "多",
+  "理由": "用户设置一次性建仓模式，全仓进出不做网格补仓",
+  "是否允许止盈": true,
+  "止盈幅度": 0.09,
+  "是否允许止损": true,
+  "止损幅度": 0.03,
+  "是否允许ATR动态止损": false,
+  "是否允许ATR动态止盈": false,
+  "是否允许移动止盈": true,
+  "移动止盈启动幅度": 0.05,
+  "移动止盈回撤幅度": 0.02,
+  "是否允许亏损时网格加仓": false,
+  "是否允许盈利时网格加仓": false,
+  "是否允许卖出基础底仓": false,
+  "是否允许网格减仓": false,
+  "建议首仓占比": 1.0
 }
 ```
 
 **为什么这样设：**
-- `first_part=1.0` → 全部资金用于首仓，`(1 - first_part) = 0`，网格加仓量自然为 0，等价一次性建仓
+- `建议首仓占比=1.0` → 全部资金用于首仓，`(1 - 建议首仓占比) = 0`，网格加仓量自然为 0，等价一次性建仓
 - 只用止盈止损控制风险，回撤到阈值自动平仓
 
 ---
@@ -237,11 +206,11 @@
 
 | 场景 | 止盈止损 | 网格 | 仓位 | 适用行情 |
 |:--|:--|:--|:--|:--|
-| 趋势做多 | ATR 动态 | 关闭 | `first_part=0.2` | 均线多头、EMA 金叉 |
-| 震荡低吸高抛 | 仅止损 4% | 开启加减 | `first_part=0.15` | 布林带收窄、CCI 振荡 |
-| 空仓观察 | 关闭 | 关闭 | `target_pos=0` | 无信号、事件前 |
-| 盈利加仓进攻 | 移动止盈 | 等份额盈利加仓 | `first_part=0.2` | 突破、放量、加速 |
+| 趋势做多 | ATR 动态 | 关闭 | 建议首仓占比=0.2 | 均线多头、EMA 金叉 |
+| 震荡低吸高抛 | 仅止损 4% | 开启加减 | 建议首仓占比=0.15 | 布林带收窄、CCI 振荡 |
+| 空仓观察 | 阶段基线接管 | 关闭 | 不下单 | 无信号、事件前 |
+| 盈利加仓进攻 | 移动止盈 | 等份额盈利加仓 | 建议首仓占比=0.2 | 突破、放量、加速 |
 | 保守防守 | 三套全开 | 关闭 | 不变 | 已有利润、不确定性高 |
-| 一次性建仓 | 三套全开 | 关闭 | `first_part=1.0` | 任意（用户偏好） |
+| 一次性建仓 | 三套全开 | 关闭 | 建议首仓占比=1.0 | 任意（用户偏好） |
 
 > **变盘场景（趋势反转、震荡破位）：** 以上场景的参数配置是针对"趋势成立"的前提。若已持有头寸且趋势发生反转，需切换到变盘防御模式，参见 [`10_reversal_handling.md`](10_reversal_handling.md)。

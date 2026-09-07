@@ -29,74 +29,80 @@
 
 每次应用 AI 结果前自动执行。智能体需要知道的两点：
 
-- 所有 AI 可控开关 → 关闭，数值参数 → 恢复模板默认值（清单见下）；
+- 全部 AI 可控（治理）参数 → 恢复 **parameters_info 模板默认值**（基类 24 个，清单见下；`openclaw_martin` 另将"用户或者智能体的备注"纳入治理集，共 25 个）；
 - **用户 UI 手动设置、或 MCP 设置的参数值作为基线保留，不会被复位覆盖。** 即：MCP 通过 `set_param` 设置的参数在后续每轮 AI 复位后仍然生效。
 
-#### 复位后：开关 → 全部关闭
+#### 复位后：开关 → 模板默认（注意：并非全部关闭！）
 
-```
-enable_martin_add_open      = False
-enable_martin_add_profit    = False
-enable_martin_add_loss      = False
-enable_martin_sub_base      = False
-enable_martin_sub           = False
-enable_stop_profit          = False
-enable_stop_loss            = False
-enable_atr_stop_loss        = False
-enable_atr_stop_profit      = False
-enable_stop_autoprofit      = False
-enable_first_allow_prices   = False
-enable_allow_price_high     = False
-```
+| 开关 | 复位后 | 说明 |
+|:--|:--:|:--|
+| `enable_stop_profit` / `enable_stop_loss` / `enable_stop_autoprofit` | **True（开）** | 模板默认即开：AI 当轮不输出时，固定止盈 9% / 固定止损 3% / 移动止盈 5% 持续生效 |
+| `enable_martin_add_open` / `enable_martin_add_profit` / `enable_martin_add_loss` | False（关） | 网格开仓/加仓开关全关 |
+| `enable_martin_sub_base` / `enable_martin_sub` | False（关） | 网格减仓开关全关 |
+| `enable_atr_stop_loss` / `enable_atr_stop_profit` | False（关） | ATR 独立系统关 |
+| `enable_first_allow_prices` / `enable_allow_price_high` | False（关） | 价格约束清空 |
+
+> ⚠️ **关键语义：每轮复位后，三个止盈止损开关（固定止盈/固定止损/移动止盈）默认是开着的，不是关着的。**
+> AI 不输出这三个开关 = 止盈止损以模板默认值继续保护；想关掉必须显式输出 `false`。
 
 #### 复位后：数值 → 模板默认
 
-```
-first_part                  = 0.2
-stop_profit_radio           = 0.09
-stop_loss_radio             = 0.03
-stop_autoprofit_start_radio = 0.05
-stop_autoprofit_back_maxvalue = 0.02
-martin_grid_distance        = 0.03
-martin_grid_profit          = 0.03
-martin_add_count            = 10
-martin_sub_part             = 0.33
-target_allow_price          = 0
-```
+| 参数 | 复位后 |
+|:--|:--:|
+| `base_direction` | 0（无方向） |
+| `first_part` | 0.2 |
+| `stop_profit_radio` | 0.09 |
+| `stop_loss_radio` | 0.03 |
+| `atr_loss_period` | 14 |
+| `atr_loss_multiple` | 12 |
+| `stop_autoprofit_start_radio` | 0.05 |
+| `stop_autoprofit_back_maxvalue` | 0.02 |
+| `martin_grid_distance` | 0.03 |
+| `martin_add_count` | 10 |
+| `martin_grid_profit` | 0.03 |
+| `martin_sub_base_part` | 0.33 |
 
-（同时清零 ATR 动态止损/止盈价格。人工作业层控制参数——`loss_close_need_manual`、`enable_openclaw_analysis`、`openclaw_main_interval`、`enable_openclaw_confirm_target_pos`——均不在复位范围内，始终保留人工设置。）
+（同时清零运行时保护变量 `target_allow_price=0` 与 ATR 动态止损/止盈价格。人工作业层控制参数——`loss_close_need_manual`、`enable_openclaw_analysis`、`openclaw_main_interval`、`enable_openclaw_confirm_target_pos`——均不在复位范围内，始终保留人工设置。）
 
 ---
 
 ## 二、价格类参数落地校验规则（AI JSON 相关）
 
-设置首仓价格区间 / 禁止追高红线时有内置校验，不满足则**拒绝设置、保留旧值**：
+设置首仓价格区间 / 禁止追高红线时有内置校验，不满足则**自动关闭对应开关并把价格归零（约束不生效），并记录日志**：
 
-| 设置 | 校验规则 |
-|:--|:--|
-| 首仓价格区间（`enable_first_allow_prices` + min/max） | `min < 0` 或 `min >= max` 时拒绝 |
-| 禁止追高/追低红线（`enable_allow_price_high` + price） | `price == 0` 时拒绝（0=未设置） |
+| 设置 | 校验规则 | 非法时的行为 |
+|:--|:--|:--|
+| 首仓价格区间（`enable_first_allow_prices` + min/max） | 需满足 `0 <= min < max` | 开关被关，min/max 归零 |
+| 禁止追高/追低红线（`enable_allow_price_high` + price） | 需满足 `price != 0`（0=未设置） | 开关被关，价格归零 |
 
-- 价格数值参数（`first_allow_price_min/max`、`allow_price_high`）**不是 AI 可控参数**（见 02 可改性列），智能体 JSON 中携带会被忽略，需要时由 MCP/人工设置；
+- 价格数值参数（`first_allow_price_min/max`、`allow_price_high`）由 **AI/MCP** 设置（AI 当轮分析基于支撑/压力/风险收益比推导），落地前须经上方校验；
+- 对应开关 `enable_first_allow_prices`/`enable_allow_price_high` 为 false 时清空约束、价格值不生效；
 - 字符串价格会导致事件线程崩溃，价格必须严格为数值。
 
 ---
 
-## 三、用户备注 `openclaw_user_remark`
+## 三、用户备注 `openclaw_user_remark` 与最新通知 `openclaw_notice`
 
-`openclaw_user_remark` 是用户附加的提示词要求（有值时以 `[策略要求备注]` 附加到 **AI 分析提示词和订单确认提示词** 中，长期有效）。
+`openclaw_user_remark` 是策略备注（有值时以 `[策略要求备注]` 附加到 **AI 分析提示词和订单确认提示词** 中）。双重用途：
 
-- 设置方式：用户直接设置参数，或 MCP 通过 `cta_strategy_send_user_remark` 写入；
-- 智能体行为：该备注有值时，AI 给出方向/参数/下单建议应**优先满足备注中的用户要求**，与备注冲突的建议应避免。
+- **用户/外部智能体的长期约束**：用户 UI 直接设置，或 MCP 通过 `cta_strategy_send_user_remark` 写入（source=manual/mcp，不被 AI 复位清除）；备注有值时，AI 给出方向/参数/下单建议应**优先满足备注中的用户要求**，与备注冲突的建议应避免。
+- **AI 的开仓意图（`openclaw_martin` 特有）**：该策略把此参数纳入 AI 治理集——"等待首仓"阶段 AI **必须**输出开仓目的/预期/退出条件（缺失留痕注入下轮），持仓阶段每轮重复输出（单轮语义），AI 覆盖人工/MCP 原值时**留痕告知**；全清仓时系统自动清除已随仓位了结的意图（风险退出期的清仓原因保留为观察上下文）。详见 [`../Martingale-Grid-Trading-Strategy/00-Router.md`](../Martingale-Grid-Trading-Strategy/00-Router.md) §4.4/§4.5-6。
+
+`openclaw_notice` 是**最新短期通知**（有值时以 `[最新通知]` 附加到**下一轮 AI 分析提示词**，新写入覆盖旧通知，提示词注明"以最新内容为准"）。
+
+- 设置方式：MCP 通过 `cta_strategy_send_notice` 发送，或 `cta_strategy_set_parameters` 写 `openclaw_notice`；
+- 与备注的区别：备注是**长期约束**，通知是**短期事件**（如"今晚财报，注意风控"），新通知直接覆盖旧通知；
+- 智能体行为：通知有值时，本轮分析应优先关注通知所述事项。
 
 ---
 
-## 四、AI 返回 JSON 约定（推荐协议）
+## 四、AI 返回 JSON 约定（参考协议）
 
-> 不同策略的 JSON 协议可能略有差异（字段名/结构），以下为推荐标准格式；
-> 若某策略使用自有协议，以该策略的实际解析行为为准。
+> 基类本身不解析 AI 结果——JSON 的解析与落地由各具体策略代码实现，**实际协议以该策略自己的技能文档为准**。
+> 例如六阶段状态机策略 `openclaw_martin` 使用 42 字段中文键协议（含"策略阶段/操作/趋势枚举/预测置信度/参数修改理由/用户或者智能体的备注"等必填字段），完整约定见 [`../Martingale-Grid-Trading-Strategy/00-Router.md`](../Martingale-Grid-Trading-Strategy/00-Router.md)。
+> 以下为最小参考格式。**`parameters` 中落地参数的键名必须使用 02 的"标准名"（中文 name_cn），不得使用英文参数名**——英文键会被策略代码忽略（参数不落地）。
 
-### 推荐格式
+### 参考格式
 
 ```json
 {
@@ -106,14 +112,14 @@ target_allow_price          = 0
   "reason": "30分钟线EMA金叉，CCI上穿100，趋势信号明确",
   "market_judgment": "上升趋势",
   "parameters": {
-    "enable_stop_profit": false,
-    "enable_atr_stop_loss": true,
-    "enable_atr_stop_profit": true,
-    "first_part": 0.2,
-    "enable_martin_add_loss": false,
-    "enable_martin_add_profit": false,
-    "enable_martin_sub_base": false,
-    "enable_martin_sub": false
+    "是否允许止盈": false,
+    "是否允许ATR动态止损": true,
+    "是否允许ATR动态止盈": true,
+    "建议首仓占比": 0.2,
+    "是否允许亏损时网格加仓": false,
+    "是否允许盈利时网格加仓": false,
+    "是否允许卖出基础底仓": false,
+    "是否允许网格减仓": false
   }
 }
 ```
@@ -135,13 +141,13 @@ target_allow_price          = 0
 |:--|:--|
 | 方向 | `base_direction`（1=多 / -1=空 / 0=观望） |
 | 止盈止损开关 | `enable_stop_profit`, `enable_stop_loss`, `enable_atr_stop_loss`, `enable_atr_stop_profit`, `enable_stop_autoprofit` |
-| 止盈止损数值 | `stop_profit_radio`, `stop_loss_radio`, `stop_autoprofit_start_radio`, `stop_autoprofit_back_maxvalue` |
+| 止盈止损数值 | `stop_profit_radio`, `stop_loss_radio`, `stop_autoprofit_start_radio`, `stop_autoprofit_back_maxvalue`, `atr_loss_period`, `atr_loss_multiple` |
 | 网格开关 | `enable_martin_add_open`, `enable_martin_add_loss`, `enable_martin_add_profit`, `enable_martin_sub_base`, `enable_martin_sub` |
-| 网格数值 | `martin_grid_distance`, `martin_add_count`, `martin_grid_profit`, `martin_sub_part` |
+| 网格数值 | `martin_grid_distance`, `martin_add_count`, `martin_grid_profit`, `martin_sub_base_part` |
 | 仓位数值 | `first_part` |
 | 价格保护开关 | `enable_first_allow_prices`, `enable_allow_price_high` |
 
-> 价格数值（`first_allow_price_min/max`、`allow_price_high`）、`atr_loss_multiple` 等不是 AI 可控参数（见 02 可改性列），需要时由 MCP/人工设置；`trend_direction` 仅作记录，不驱动动作。
+> 价格数值（`first_allow_price_min/max`、`allow_price_high`）由 AI/MCP 设置（AI 当轮分析推导，见第二节）；ATR 数值（`atr_loss_period/multiple`）可由 AI 输出（落地范围 5-120 / 1-50，不输出则随复位回 14/12）；`trend_direction` 仅作记录，不驱动动作。
 
 ---
 

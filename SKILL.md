@@ -1,6 +1,6 @@
 ---
 name: "tiger-stock-strategy-analysis"
-description: "股票量化策略分析工具：为 vnpy 量化软件提供策略分析和下单前审核。支持智能马丁格尔策略(openclaw-martin)、多信号权重评分趋势策略（Multi\_Signal\_Treand）；vnpy整体持仓分析与风控；大盘与板块和资金流向分析；做多做空选股；"
+description: "股票量化策略分析工具：为 vnpy 量化软件提供策略分析和下单前审核。支持智能马丁格尔策略(openclaw-martin)、多信号权重评分趋势策略（Multi\_Signal\_Treand）；vnpy整体持仓分析与风控；大盘与板块和资金流向分析；做多做空选股；vnpy量化系统全局配置答疑与修改；"
 ---
 
 # tiger-stock-strategy-analysis
@@ -147,6 +147,13 @@ web\_search 使用 Tavily 引擎，每月限额 1000 次，超出后 web\_search
 本技能支持对指定用户的**量化交易账户整体状态**进行综合分析，包括账户风险评估、各策略持仓盈亏分析，并结合大盘与板块走势判断是否存在重大机会或风险，必要时发送控制命令进行调整。
 
 详细说明见 [docs/vnpy整体持仓分析与风控/00\_index.md](docs/vnpy整体持仓分析与风控/00_index.md)。
+
+## vnpy量化系统全局配置
+
+本技能支持 vnpy 量化系统**全局配置参数**（`.vntrader/vt_setting.json`）的查询、答疑与修改建议，覆盖：界面/日志、邮件/数据源/数据库、AI 分析链路（`use_goose` goose 直连 vs OpenClaw 桥）、数据代理、MCP 认证令牌等。
+用户问"某配置项是什么/默认值/怎么改/改了有什么影响"或要求修改全局配置时，查阅本文档。
+
+详细说明见 [docs/vnpy量化系统配置/vnpy量化系统配置.md](docs/vnpy量化系统配置/vnpy量化系统配置.md)。
 
 ## 你支持如下量化交易策略类型
 

@@ -1,9 +1,9 @@
 # 02 — 参数列表
 
-> 全部 48 个参数定义（47 个属于智能体参数体系 + 1 个人工作业层控制参数；另有 3 个 UI 分隔符，无实际逻辑）。
+> 全部 50 个参数定义（其中 24 个 AI 可控、4 个人工作业层控制、其余人工设置；另有 3 个 UI 分隔符，无实际逻辑）。
 >
 > **标准名**列即代码 `parameters_info.name_cn`，是 AI 读写参数时的**标准中文键名**（状态字典上报、AI 返回 JSON 均使用此列名称，请勿使用其他叫法）。
-> 标记 `—` 的参数不进入状态字典上报（参数本身仍然生效）。
+> 并非所有参数都进入状态字典上报（未上报的参数本身仍然生效），上报清单见 [`03_variables_and_state.md`](03_variables_and_state.md) 第二节。
 >
 > 可改性说明：
 > - **AI/MCP**：AI 返回 JSON 的 `parameters` 可携带，MCP `set_param` 可设置；
@@ -21,6 +21,7 @@
 | `init_load_days` | `初始化所需天数` | int | 5 | 人工 | 策略启动需加载的历史行情前置天数 |
 | `use_1m_5m_15m_30m_60m` | `主信号K线周期(分钟数)` | int | 15 | 人工 | 主 K 线周期（1/5/15/30/60/240/720/1440） |
 | `us_stock_trading_hours_only` | `美股盘中交易` | bool | True | 人工 | 是否只在美股交易时段交易（仅对美股生效，非美股不受影响） |
+| `enable_publish_status_redis` | `发布Redis状态板` | bool | True | 人工 | 是否启用 Redis 状态发布（外部系统/MCP 查询状态板的开关，仅实盘生效） |
 
 ---
 
@@ -41,10 +42,11 @@
 | `trade_radio` | `杠杆(合约乘数)` | float | 1.0 | 人工 | 交易杠杆（期货合约乘数/数字币杠杆） |
 | `trade_fee` | `交易手续费` | float | 0.0002 | 人工 | 交易手续费率 |
 | `first_part` | `建议首仓占比` | float | 0.2 | AI/MCP | 首仓动用资金的比例。**关键杠杆参数**：设为 1.0 即一次性建仓，不留资金补仓；设为 0.2 则首仓 20%，其余留给网格加仓 |
-| `volume_min_unit` | `最小交易量单位` | float | 1.0 | 人工 | 最小交易单位 |
+| `volume_min_unit` | `最小交易单位` | float | 1.0 | 人工 | 最小交易单位（程序从交易所自动获取，币市可为小数；仅回测手工填写） |
 | `volume_change_with_v` | `盈亏算入资金量` | bool | True | 人工 | 随盈亏调整每次交易量（盈利增、亏损减）；False=资金固定为 `start_asset` |
 | `order_price_add` | `下单加价比例` | float | 0.0005 | 人工 | 限价单在对手价上加/减的让价比例 |
 | `target_delay_minute_max` | `成交等待分钟数` | int | 3 | 人工 | 下单最大延迟分钟数，超时未成交则取消本次调仓 |
+| `close_cooldown_hours` | `平仓冷却（小时）` | int | 48 | 人工 | 平仓冷静期：平仓后禁止**同方向**开新仓的时长（0=不限制，1-72）。智能体观察到"平仓后开仓未生效"时优先排查此项 |
 
 ---
 
@@ -58,11 +60,11 @@
 | `stop_loss_radio` | `止损幅度` | float | 0.03 | AI/MCP | 固定止损比例（0.03=3%） |
 | `enable_atr_stop_loss` | `是否允许ATR动态止损` | bool | False | AI/MCP | 用 ATR 动态计算止损价（独立系统） |
 | `enable_atr_stop_profit` | `是否允许ATR动态止盈` | bool | False | AI/MCP | 用 ATR 动态计算止盈价 |
-| `atr_loss_period` | `止盈止损用ATR周期` | int | 14 | 人工 | ATR 指标周期 |
-| `atr_loss_multiple` | `止盈止损用ATR倍数` | int | 12 | 人工 | ATR 止损/止盈倍数（价格 = 基准价 ± ATR × 倍数） |
+| `atr_loss_period` | `止盈止损用ATR周期` | int | 14 | AI/MCP | 基于主周期的ATR动态止损/止盈的ATR指标周期（AI 明确给出即落地，缺省随复位回 14；范围 5-120） |
+| `atr_loss_multiple` | `止盈止损用ATR倍数` | int | 12 | AI/MCP | 基于主周期的ATR动态止损/止盈的倍数（AI 明确给出即落地，缺省随复位回 12；范围 1-50） |
 | `enable_stop_autoprofit` | `是否允许移动止盈` | bool | True | AI/MCP | 盈利回撤移动止盈开关 |
 | `stop_autoprofit_start_radio` | `移动止盈启动幅度` | float | 0.05 | AI/MCP | 浮盈达到此比例后启动移动止盈 |
-| `stop_autoprofit_back_maxvalue` | `移动止盈回撤幅度` | float | 0.03 | AI/MCP | 移动止盈允许的最大回撤绝对值比例 |
+| `stop_autoprofit_back_maxvalue` | `移动止盈回撤幅度` | float | 0.02 | AI/MCP | 移动止盈允许的最大回撤绝对值比例 |
 
 ---
 
@@ -70,7 +72,7 @@
 
 | 参数名 | 标准名 | 类型 | 默认值 | 可改性 | 说明 |
 |:--|:--|:--|:--:|:--|:--|
-| `martin_k_time` | `网格K线周期` | int | 5 | 人工 | 网格捕捉加减仓/开仓信号的 K 线周期（1/5/15/30/60） |
+| `martin_k_time` | `网格K线周期` | int | 5 | 人工 | 网格捕捉加减仓/开仓信号的 K 线周期（1/5/15/30/60/240/720/1440；240=4小时、720=12小时、1440=日K，大周期仅按日级节奏判网格） |
 | `cci_martin_period` | `网格K线CCI指标周期` | int | 35 | 人工 | CCI 指标周期，越小信号越多、噪音越大 |
 | `enable_martin_add_open` | `是否允许网格主动开仓` | bool | False | AI/MCP | **必须打开此开关才会自动开仓**：空仓且 `base_direction≠0` 时顺方向开仓 |
 | `enable_martin_add_profit` | `是否允许盈利时网格加仓` | bool | False | AI/MCP | 盈利时等距网格加仓（顺趋势） |
@@ -80,7 +82,7 @@
 | `enable_martin_sub_base` | `是否允许卖出基础底仓` | bool | False | AI/MCP | 允许减基础底仓（仅盈利时有效） |
 | `enable_martin_sub` | `是否允许网格减仓` | bool | False | AI/MCP | 允许减盈利的网格仓（统一开关，与盈亏状态无关） |
 | `martin_grid_profit` | `网格止盈` | float | 0.03 | AI/MCP | 网格仓必须达到的盈利比例，达到才允许减仓 |
-| `martin_sub_part` | `基础底仓分批出货比例` | float | 0.33 | AI/MCP | `enable_martin_sub_base=True` 时每次减基础底仓的比例 |
+| `martin_sub_base_part` | `基础底仓分批出货比例` | float | 0.33 | AI/MCP | `enable_martin_sub_base=True` 时每次减基础底仓的比例 |
 
 ---
 
@@ -89,10 +91,10 @@
 | 参数名 | 标准名 | 类型 | 默认值 | 可改性 | 说明 |
 |:--|:--|:--|:--:|:--|:--|
 | `enable_first_allow_prices` | `是否限制首仓价格区间` | bool | False | AI/MCP | 首仓价格限制开关（仅空仓开仓时检查） |
-| `first_allow_price_min` | `首仓最低价` | float | 0.0 | 人工 | 首仓价格区间下限 |
-| `first_allow_price_max` | `首仓最高价` | float | 0.0 | 人工 | 首仓价格区间上限 |
+| `first_allow_price_min` | `首仓最低价` | float | 0.0 | AI/MCP | 首仓价格区间下限（AI 当轮分析基于支撑/压力推导，MCP/人工可覆盖） |
+| `first_allow_price_max` | `首仓最高价` | float | 0.0 | AI/MCP | 首仓价格区间上限（AI 当轮分析基于支撑/压力推导，MCP/人工可覆盖） |
 | `enable_allow_price_high` | `是否禁止追高` | bool | False | AI/MCP | 禁止追高/追低开关（仅持仓时加仓有效，见下方说明） |
-| `allow_price_high` | `禁止追高价格红线` | float | 0.0 | 人工 | 禁止追高/追低价格红线 |
+| `allow_price_high` | `禁止追高价格红线` | float | 0.0 | AI/MCP | 禁止追高/追低价格红线（AI 当轮分析基于 MA50/RR 推导，MCP/人工可覆盖） |
 
 > **首仓价格区间：按开仓方向单向检查（原理）**
 > 代码不要求同时满足上下限，而是按方向各查一边：
@@ -109,11 +111,16 @@
 
 ---
 
-## 七、人工作业层控制参数（智能体不可设置）
+## 七、人工作业层控制参数（AI 不输出；MCP 未经用户明确要求不得修改）
 
-> 以下 4 个参数都是**人（策略部署者）的决策**，控制"智能体如何参与这个策略"，
-> 智能体**不可能设置**它们（AI JSON 不携带、智能体也不应建议修改），
-> 智能体只需知道它们的存在与效果——观察到"调仓未生效 / 分析不触发 / 下单无审核"等现象时，应从这些开关找原因。
+> 以下 4 个参数都是**人（策略部署者）的决策**，控制"智能体如何参与这个策略"。
+> AI 分析 JSON **不携带**这 4 个参数（AI 不会输出它们）；
+> 其中 `启用AI策略分析` / `AI定时分析周期` / `AI审核后下单` 3 个**开了 MCP 权限**（外部智能体技术上可设，例如用户要求时临时关闭 AI 分析），
+> `亏损平仓人工审批` 为纯人工参数，MCP 不可设置。
+>
+> **纪律：没有用户的明确要求，AI 与 MCP 都不得修改这 4 个参数。**
+> 智能体只需知道它们的存在与效果——观察到"调仓未生效 / 分析不触发 / 下单无审核"等现象时，应从这些开关找原因，
+> 但只能**报告**给用户，不应主动建议或代为修改。
 
 | 参数名 | 标准名 | 类型 | 默认值 | 人工控制的内容 |
 |:--|:--|:--|:--:|:--|
@@ -152,11 +159,11 @@
 | 功能组 | 核心参数 | 详参见 |
 |:--|:--|:--|
 | **方向** | `base_direction`, `trend_direction` | 本文二 |
-| **仓位控制** | `first_part`, `volume_min_unit`, `target_delay_minute_max` | [`07_trade_control.md`](07_trade_control.md) |
+| **仓位控制** | `first_part`, `volume_min_unit`, `target_delay_minute_max`, `close_cooldown_hours` | [`07_trade_control.md`](07_trade_control.md) |
 | **止盈** | `enable_stop_profit`, `stop_profit_radio`, `enable_stop_autoprofit`, `enable_atr_stop_profit` | [`05_stop_profit_loss.md`](05_stop_profit_loss.md) |
 | **止损** | `enable_stop_loss`, `stop_loss_radio`, `enable_atr_stop_loss` | [`05_stop_profit_loss.md`](05_stop_profit_loss.md) |
 | **网格加仓** | `enable_martin_add_loss`, `enable_martin_add_profit`, `martin_grid_distance`, `martin_add_count` | [`06_grid_martin.md`](06_grid_martin.md) |
-| **网格减仓** | `enable_martin_sub_base`, `enable_martin_sub`, `martin_grid_profit`, `martin_sub_part` | [`06_grid_martin.md`](06_grid_martin.md) |
+| **网格减仓** | `enable_martin_sub_base`, `enable_martin_sub`, `martin_grid_profit`, `martin_sub_base_part` | [`06_grid_martin.md`](06_grid_martin.md) |
 | **网格开仓** | `enable_martin_add_open`, `base_direction` | [`06_grid_martin.md`](06_grid_martin.md) |
 | **价格保护** | `enable_first_allow_prices`, `enable_allow_price_high` | [`07_trade_control.md`](07_trade_control.md) |
 | **人工作业层控制** | `loss_close_need_manual`, `enable_openclaw_analysis`, `openclaw_main_interval`, `enable_openclaw_confirm_target_pos` | 本文七 |

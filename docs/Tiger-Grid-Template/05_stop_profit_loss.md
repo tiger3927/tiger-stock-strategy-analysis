@@ -38,8 +38,8 @@ on_bar()（每分钟，低速）
 | 固定止盈 | `enable_stop_profit=True` | `high_stop_price = pos_price × (1 + stop_profit_radio)` |
 | 固定止损 | `enable_stop_loss=True` | `low_stop_price = pos_price × (1 - stop_loss_radio)` |
 | 移动止盈 | `enable_stop_autoprofit=True` 且 `current_profit_loss_radio > stop_autoprofit_start_radio` | 取回撤保护价覆盖到 low_stop_price，**永不下降** |
-| ATR 止损 | `enable_atr_stop_loss=True` | `atr_stop_price = close - ATR(14) × atr_loss_multiple`（独立变量） |
-| ATR 止盈 | `enable_atr_stop_profit=True` | `atr_profit_price = close + (stop_profit_ratio/stop_loss_ratio) × ATR(14) × atr_loss_multiple`（独立变量） |
+| ATR 止损 | `enable_atr_stop_loss=True` | `atr_stop_price = close - ATR(atr_loss_period) × atr_loss_multiple`（独立变量） |
+| ATR 止盈 | `enable_atr_stop_profit=True` | `atr_profit_price = close + (stop_profit_radio/stop_loss_radio) × ATR(atr_loss_period) × atr_loss_multiple`（独立变量） |
 
 **核心原则：** 止盈止损价只向**利润保护方向**更新，不反向回落——做多时 `high_stop_price` 和 `low_stop_price` 都只上移（止盈线与止损线不断抬高）；做空时两者都只下移。
 
@@ -92,5 +92,5 @@ ATR 系统使用**独立变量** `atr_stop_price` / `atr_profit_price`，不与 
 当盈利达到 `stop_autoprofit_start_radio`（默认 5%）后触发：
 
 - 记录从最高盈利回撤的幅度
-- 回撤超过 `stop_autoprofit_back_maxvalue`（如 3%），触发平仓
+- 回撤超过 `stop_autoprofit_back_maxvalue`（默认 2%），触发平仓
 - 关键：做多时 low_stop_price 随盈利增加而**持续上移**，永不下移
