@@ -225,11 +225,13 @@ tiger-stock-strategy-analysis目录下应该有本SKILL.md，docs目录，script
 | 模块                             | 安装命令                                                | 用途                                             |
 | ------------------------------ | --------------------------------------------------- | ---------------------------------------------- |
 | `get_market_data.py`           | `pip install yfinance`                              | 获取结构化价格数据（含均线、52周百分位）                          |
-| `get_market_data.py`           | `pip install requests beautifulsoup4 numpy`         | HTTP 请求、HTML 解析、数值计算（ATR/CCI/支撑压力位）            |
+| `get_market_data.py`           | `pip install requests requests-cache beautifulsoup4 numpy pandas` | HTTP 请求、HTTP 响应缓存（顶层硬依赖）、HTML 解析、数值计算（ATR/CCI/支撑压力位）、DataFrame 数据处理（顶层硬依赖） |
+| `get_market_data.py`（可选）     | `pip install curl_cffi`                             | 可选：走代理直调 Yahoo chart API，替代被风控的 yfinance 内部请求；未安装自动降级 |
 | `get_market_data.py`（calendar） | `pip install -U camoufox[geoip]` + `camoufox fetch` | 必须绕过 Cloudflare 获取 ForexFactory 经济日历           |
-| `test_get_market_data.py`      | `pip install pandas`                                | 测试脚本中构造模拟 DataFrame 数据                         |
+| `test_get_market_data.py`      | （无新增依赖，pandas/numpy 已随 `get_market_data.py` 安装）     | 测试脚本中构造模拟 DataFrame 数据                         |
 | `tools.py`                     | （纯标准库，无需安装）                                         | JSON 文件读取工具函数                                  |
 | `update_vt_symbol.py`          | （纯标准库，无需安装）                                         | 管理 vt\_symbol\_info.json：新增/修改/删除/查询品种记录（原子写入） |
+| `sync_stock_pool.py`           | （纯标准库，无需安装）                                         | 校验美股选股池数据（stock\_pool.json 结构与统计）           |
 
 ***
 

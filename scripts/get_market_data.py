@@ -490,7 +490,8 @@ def get_history_dataframe(ticker: str, period: str = "1y", session=None) -> pd.D
     拉取顺序（缓存优先，逐级回落）:
       1. 历史行情文件缓存命中（30 分钟 TTL）→ 直接返回，秒级响应
       2. socks5 代理直调 Yahoo chart API（curl_cffi），结果写入缓存
-      3. 回落 yfinance 原生 history（可传 requests_cache CachedSession 复用 HTTP 缓存）
+      3. 回落 yfinance 原生 history（yfinance 1.5.2 不接受 requests_cache 缓存会话，
+         由 yfinance 自建 session 实时请求）
 
     返回与 yfinance history() 兼容的 DataFrame（列 Open/High/Low/Close/Volume）。
     失败抛异常。
@@ -510,8 +511,11 @@ def get_history_dataframe(ticker: str, period: str = "1y", session=None) -> pd.D
         except Exception:
             pass  # 走代理失败，回落到 yfinance
 
-    # 3. 回落：yfinance 原生（可传 requests_cache CachedSession 复用 HTTP 缓存）
-    df = yf.Ticker(ticker).history(period=period, session=session)
+    # 3. 回落：yfinance 原生。yfinance 1.5.2 明确拒绝带缓存的会话
+    #    （"Caching sessions (e.g. requests_cache) are not supported"），
+    #    故不向 yfinance 传 session，由 yfinance 自建 session（curl_cffi chrome 指纹）实时请求；
+    #    重复拉取去重靠第 1 层文件缓存（30 分钟 TTL）。session 参数仅保留调用链兼容。
+    df = yf.Ticker(ticker).history(period=period)
     if not df.empty:
         _save_history_cache(ticker, period, df)
     return df
@@ -615,7 +619,7 @@ def get_ticker_data(ticker: str, session: CachedSession = None) -> dict:
 
     Args:
         ticker: 股票代码
-        session: requests_cache CachedSession（可选），传入后 yfinance 历史行情 HTTP 响应自动缓存（TTL 由 fetch_batch 的 cache_ttl 控制）
+        session: 保留参数（yfinance 1.5.2 拒绝 requests_cache 缓存会话，不再传给 yfinance）
 
     Returns:
         dict: {ticker, name, price, change, change_pct, ma_20, ma_50, ma_200,
@@ -745,27 +749,22 @@ def fetch_batch(tickers: list, labels: dict = None, cache_ttl: int = 1800) -> li
     缓存（三层架构详见文件头部全局常量区注释）:
       - 历史行情 K 线 : get_history_dataframe 内文件缓存，TTL = _HISTORY_CACHE_TTL（30 分钟）
       - info 元数据    : _get_info_cached 文件缓存，TTL = 12 小时
-      - yfinance HTTP : 本函数创建的 CachedSession（TTL = cache_ttl，默认 30 分钟，仅回落路径生效）
+      - yfinance HTTP : yfinance 1.5.2 无 HTTP 响应缓存（拒绝 requests_cache），实时请求
     多个策略在缓存窗口内先后拉取同一批次时直接命中，避免重复请求。
 
     Args:
         tickers: 需要获取的 ticker 列表
         labels: ticker → 中文名映射（可选），命中时附加到结果
-        cache_ttl: CachedSession 的 HTTP 缓存 TTL（秒），默认 1800（30 分钟）
+        cache_ttl: 保留参数（yfinance 1.5.2 已无 HTTP 缓存，去重靠文件缓存），默认 1800
     """
     if not tickers:
         return []
 
-    # requests_cache：sqlite 持久化缓存 yfinance 原始 HTTP 响应，跨进程复用
-    session = CachedSession(
-        cache_name=_CACHE_DB,
-        backend="sqlite",
-        expire_after=cache_ttl,
-    )
-
+    # 注意：yfinance 1.5.2 拒绝 requests_cache 缓存会话（HTTP 层不再缓存），
+    # 跨进程去重由 get_history_dataframe 的文件缓存（30 分钟 TTL）承担。
     results = []
     with ThreadPoolExecutor(max_workers=3) as executor:
-        futures = {executor.submit(_fetch_single, t, labels, session): t for t in tickers}
+        futures = {executor.submit(_fetch_single, t, labels, None): t for t in tickers}
         for future in as_completed(futures):
             data = future.result()
             results.append(data)
@@ -857,6 +856,36 @@ WEB_INDICATOR_QUERIES_TEMPLATE = {
 }
 
 
+def _clean_incomplete_camoufox_addons():
+    """清理 camoufox 数据目录下不完整的 addon 目录（缺少 manifest.json）。
+
+    背景：UBO 等 addon 下载失败（如 addons.mozilla.org 返回 451）时，
+    camoufox 会留下空/残缺目录；下次浏览器启动会检测到该目录存在并尝试
+    加载，直接报 "manifest.json is missing. Addon path must be a path to an
+    extracted addon."，表现为隔次交替失败（一次成功一次失败）。
+    每次启动 Camoufox 前调用本函数删除此类不完整目录；目录不存在时
+    camoufox 可容忍（跳过该 addon 继续运行）。
+    """
+    try:
+        import shutil
+        from camoufox import pkgman
+    except Exception:
+        return  # camoufox 未安装，无需清理
+    try:
+        addons_dir = os.path.join(pkgman.INSTALL_DIR, "addons")
+        if not os.path.isdir(addons_dir):
+            return
+        for name in os.listdir(addons_dir):
+            addon_path = os.path.join(addons_dir, name)
+            if os.path.isdir(addon_path) and not os.path.isfile(
+                os.path.join(addon_path, "manifest.json")
+            ):
+                shutil.rmtree(addon_path, ignore_errors=True)
+                print(f"  [camoufox] 已清理不完整 addon 目录: {addon_path}（无 manifest.json）")
+    except Exception as e:
+        print(f"  [camoufox] 清理不完整 addon 目录失败: {e}")
+
+
 def fetch_ici_table(url: str) -> dict:
     """
     抓取 ICI 页面中的表格数据，提取 Equity 和 Total 行
@@ -882,6 +911,10 @@ def fetch_ici_table(url: str) -> dict:
             "error": "camoufox 未安装，执行 pip install -U camoufox[geoip] && camoufox fetch",
             "fetched_at": now_utc,
         }
+
+    # 启动前清理不完整的 addon 目录（UBO 下载失败会留空目录，导致下次启动报
+    # "manifest.json is missing"），见 _clean_incomplete_camoufox_addons 说明
+    _clean_incomplete_camoufox_addons()
 
     _script_dir = os.path.dirname(os.path.abspath(__file__))
     _user_data_dir = os.path.join(_script_dir, "temp", "browser_data_ici")
@@ -1232,11 +1265,159 @@ def fetch_ratings(ticker):
     return result
 
 
+_MONTH_ABBR = {m.lower(): i for i, m in enumerate(
+    ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"], 1)}
+
+
+def _norm_event_date(raw):
+    """将各种事件日期格式归一化为 ISO YYYY-MM-DD，无法解析返回 None。
+
+    支持: '2026-09-10' / '2026-09-10T04:15:00-04:00'（ISO）、
+          'Sep10'（FF HTML）、'September 09, 2026'（FRED）
+    """
+    if not raw:
+        return None
+    s = str(raw).strip()
+    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})", s)
+    if m:
+        return s[:10]
+    m = re.match(r"^([A-Za-z]{3,9})\s?(\d{1,2})$", s)
+    if m:
+        mon = _MONTH_ABBR.get(m.group(1).lower()[:3])
+        if mon:
+            return f"{datetime.date.today().year:04d}-{mon:02d}-{int(m.group(2)):02d}"
+    m = re.match(r"^([A-Za-z]+) (\d{1,2}), (\d{4})$", s)
+    if m:
+        mon = _MONTH_ABBR.get(m.group(1).lower()[:3])
+        if mon:
+            return f"{m.group(3)}-{mon:02d}-{int(m.group(2)):02d}"
+    return None
+
+
+def _fetch_ff_json_calendar():
+    """源2: ForexFactory 官方公开 JSON（本周事件，无需浏览器、无 Cloudflare）
+
+    URL: https://nfs.faireconomy.media/ff_calendar_thisweek.json
+    返回事件列表（仅今天及之后的事件）
+    """
+    url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
+    text = _fetch_url(url, timeout=15)
+    if not text:
+        return []
+    try:
+        data = json.loads(text)
+    except Exception:
+        return []
+    if not isinstance(data, list):
+        return []
+    now = datetime.datetime.now(timezone.utc)
+    impact_map = {"High": "高", "Medium": "中", "Low": "低"}
+    out = []
+    for it in data:
+        if not isinstance(it, dict):
+            continue
+        try:
+            dt = datetime.datetime.fromisoformat(it.get("date", ""))
+        except Exception:
+            continue
+        if dt < now - datetime.timedelta(hours=2):
+            continue  # 只要今天及之后的事件
+        out.append({
+            "date": dt.strftime("%b%d"),
+            "time": dt.strftime("%H:%M"),
+            "event": it.get("title", "?"),
+            "country": it.get("country", "?"),
+            "impact": impact_map.get(it.get("impact", ""), it.get("impact", "?")),
+            "forecast": it.get("forecast") or "-",
+            "previous": it.get("previous") or "-",
+            "source": "forexfactory-json",
+        })
+    return out
+
+
+# FRED 日历白名单：只保留对美股宏观分析重要的发布（其余每日例行发布噪音过大）
+_FRED_MAJOR_RE = re.compile(
+    r"Consumer Price Index|Producer Price Index|Employment Situation|"
+    r"Unemployment Insurance Weekly Claims|Personal Income and Spending|"
+    r"Advance Economic Indicators|Gross Domestic Product|"
+    r"Advance Monthly Sales for Retail|Advance Retail Trade|"
+    r"Durable Goods Orders|Industrial Production|Industrial Capacity Utilization|"
+    r"Consumer Confidence|Consumer Sentiment|"
+    r"Housing Starts|Building Permits|New Residential Construction|Housing Market Indicators|"
+    r"Existing Home Sales|FOMC|Trade in Goods|Consumer Credit|Monthly Wholesale Trade",
+    re.IGNORECASE,
+)
+
+
+def _fetch_fred_calendar(days=14):
+    """源3: FRED 发布日历（今日至 +days 天，仅白名单内的重要美国宏观发布）
+
+    URL: https://fred.stlouisfed.org/releases/calendar?vs=YYYY-MM-DD&ve=YYYY-MM-DD
+    按天请求（单天 30-45 条，不触发 50 条分页截断），4 线程并发。
+    需要 curl_cffi 模拟浏览器 TLS（urllib 直连超时）；无 curl_cffi 时跳过。
+    """
+    try:
+        from curl_cffi import requests as cr
+    except ImportError:
+        return []
+
+    today = datetime.date.today()
+    urls = [
+        f"https://fred.stlouisfed.org/releases/calendar"
+        f"?vs={(today + datetime.timedelta(days=i)).isoformat()}"
+        f"&ve={(today + datetime.timedelta(days=i)).isoformat()}"
+        for i in range(days)
+    ]
+
+    def _fetch_one(day_iso_url):
+        day, url = day_iso_url
+        try:
+            r = cr.get(url, impersonate="chrome", timeout=20)
+            if r.status_code != 200:
+                return []
+            t = r.text
+        except Exception:
+            return []
+        rows = re.findall(
+            r'<tr>\s*<td[^>]*>([^<]*)</td>\s*<td[^>]*>\s*<a href="/release\?rid=\d+">([^<]+)</a>',
+            t, re.DOTALL,
+        )
+        out = []
+        for time_s, name in rows:
+            name = _clean_html(name).strip()
+            if not _FRED_MAJOR_RE.search(name):
+                continue
+            # 12 小时制转 24 小时制（"7:30 am" → "07:30"），保证同日排序正确
+            time_s = time_s.strip()
+            tm = re.match(r"^(\d{1,2}):(\d{2})\s*([ap])m$", time_s, re.IGNORECASE)
+            if tm:
+                h = int(tm.group(1)) % 12
+                if tm.group(3).lower() == "p":
+                    h += 12
+                time_s = f"{h:02d}:{tm.group(2)}"
+            out.append({
+                "date": day,
+                "time": time_s,
+                "event": name,
+                "country": "USA",
+                "impact": "?",
+                "source": "fred",
+            })
+        return out
+
+    out = []
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        for res in executor.map(_fetch_one, [(u.split("vs=")[1][:10], u) for u in urls]):
+            out.extend(res)
+    return out
+
+
 def fetch_economic_calendar():
     """
-    获取未来一周经济日历
+    获取未来一周经济日历（多数据源合并，按优先级去重）
 
-    源1: Camoufox + ForexFactory（主数据源，绕过 Cloudflare）
+    源1: Camoufox + ForexFactory（主数据源，绕过 Cloudflare，含 actual/forecast，覆盖本周+下周）
       URL: https://www.forexfactory.com/calendar
       预期 HTML 结构:
       <table class="calendar__table">
@@ -1251,24 +1432,40 @@ def fetch_economic_calendar():
         </tr>
       </table>
 
-    源2: Fed Calendar（FOMC 会议日期，备用补充）
+    源2: ForexFactory 官方公开 JSON（本周事件，无需浏览器、无 Cloudflare，源1 失败时的主力兜底）
+      URL: https://nfs.faireconomy.media/ff_calendar_thisweek.json
+      结构: [{"title","country","date"(ISO 带时区),"impact"(High/Medium/Low),"forecast","previous"}, ...]
+
+    源3: FRED 发布日历（今日至 +14 天，仅白名单内的重要美国宏观发布，如 CPI/PPI/NFP/零售）
+      URL: https://fred.stlouisfed.org/releases/calendar?vs=YYYY-MM-DD&ve=YYYY-MM-DD
+      需 curl_cffi 模拟浏览器 TLS（urllib 直连超时）；无 curl_cffi 时自动跳过
+
+    源4: Fed Calendar（FOMC 会议日期，备用补充）
       URL: https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm
       预期 HTML 结构:
       <div class="fomc-meeting__month">June</div>
       <div class="fomc-meeting__date">17-18</div>
 
+    输出: 事件列表（按日期升序，非 ISO 日期排最后，上限 150 条）。
+      每项: {date, time?, event, country?, impact?, actual?, forecast?, previous?, source}
+      去重: 同事件+同日期只保留优先级高的源（源1 > 源2 > 源3 > 源4）。
+
     故障排查:
       - Camoufox ImportError: 未安装 camoufox，执行 pip install -U camoufox[geoip] && camoufox fetch
-      - ForexFactory 返回空: Cloudflare 可能更新了挑战，检查 Camoufox 版本（pip show camoufox）
+      - ForexFactory 返回空: Cloudflare 可能更新了挑战，检查 Camoufox 版本（pip show camoufox）；
+        此时源2 JSON / 源3 FRED 仍可正常提供数据
       - 正则匹配 0 条: ForexFactory 改了 CSS class 名，检查页面实际 class（用浏览器 F12 查看）
       - 超时: 网络问题，检查代理设置或增加 timeout
-      - 降级: 自动 fallback 到 urllib 直连（可能被 Cloudflare 拦截，但 Fed Calendar 仍可用）
+      - 降级: 自动 fallback 到 urllib 直连（可能被 Cloudflare 拦截，但源2/3/4 仍可用）
     """
     results = []
 
     # 源1: Camoufox + ForexFactory
     try:
         from camoufox.sync_api import Camoufox
+
+        # 启动前清理不完整的 addon 目录（避免 "manifest.json is missing" 启动失败）
+        _clean_incomplete_camoufox_addons()
 
         _script_dir = os.path.dirname(os.path.abspath(__file__))
         _user_data_dir = os.path.join(_script_dir, "temp", "browser_data")
@@ -1382,7 +1579,15 @@ def fetch_economic_calendar():
     except Exception:
         pass
 
-    # 源2: Fed Calendar (FOMC 会议，备用补充)
+    # 源2: ForexFactory 官方公开 JSON（本周，无 Cloudflare，源1 失败时的主力兜底）
+    ff_json_events = _fetch_ff_json_calendar()
+    results.extend(ff_json_events)
+
+    # 源3: FRED 重要发布日历（今日至 +14 天，覆盖下周的关键美国宏观数据）
+    fred_events = _fetch_fred_calendar(days=14)
+    results.extend(fred_events)
+
+    # 源4: Fed Calendar (FOMC 会议，备用补充)
     url2 = "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
     html = _fetch_url(url2, timeout=10)
     if html:
@@ -1403,7 +1608,27 @@ def fetch_economic_calendar():
                 "source": "federalreserve"
             })
 
-    return results
+    # 去重: 同事件+同日期只保留先出现的（源优先级: 源1 > 源2 > 源3 > 源4）
+    seen = set()
+    deduped = []
+    for ev in results:
+        name = re.sub(r"\s+", " ", str(ev.get("event", ""))).lower()[:40]
+        iso = _norm_event_date(ev.get("date", ""))
+        key = (name, iso or str(ev.get("date", "")))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(ev)
+
+    # 排序: ISO 日期升序在前，非 ISO 日期（如 "January 27-28"）排最后
+    def _sort_key(ev):
+        iso = _norm_event_date(ev.get("date", ""))
+        if iso:
+            return (0, iso, ev.get("time", ""))
+        return (1, "", str(ev.get("date", "")))
+
+    deduped.sort(key=_sort_key)
+    return deduped[:150]
 
 
 # ==================== OrioSearch 市场指标搜索（替代 web_search） ====================
@@ -1413,6 +1638,30 @@ def fetch_economic_calendar():
 # 数据源：OrioSearch（https://search.my-gun.top）
 # 输出：结构化 JSON/text，含每项指标的 answer、关键数值、耗时
 # ============================================================
+
+
+# OrioSearch 答案"无有效信息"模板句式：搜索结果中没有目标数据时的固定回复
+# （2026-09-08 实测 14 项中 11 项为此类回复，若不计入 hit 会高估数据质量）
+_NO_ANSWER_PATTERNS = (
+    # 允许 markdown 加粗（如 "do **not** include"）等干扰字符
+    r"do\s+\**not\**\s+(?:contain|include|provide|have)",
+    r"does\s+\**not\**\s+(?:contain|include|provide|have)",
+    r"don'?t\s+(?:contain|include|provide|have)",
+    r"no explicit", r"not explicitly",
+    r"cannot be (?:found|determined|calculated)",
+    r"unable to (?:find|determine|locate)",
+    r"does not (?:provide|have)",
+    r"not available in", r"no data",
+    r"无法(?:找到|确定|获取|提供)", r"未能(?:找到|获取)", r"没有(?:相关|找到|提供)",
+)
+_NO_ANSWER_RE = re.compile("|".join(_NO_ANSWER_PATTERNS), re.IGNORECASE)
+
+
+def _is_no_answer(text):
+    """判断 OrioSearch 答案是否为"无有效信息"模板回复（有返回但非真实数据）"""
+    if not text:
+        return True
+    return bool(_NO_ANSWER_RE.search(text[:300]))
 
 
 def fetch_web_indicators():
@@ -1427,11 +1676,15 @@ def fetch_web_indicators():
             "source": "oriosearch",
             "fetched_at": "...",
             "total": 14,
-            "hit": 13,
+            "hit": 13,            # 有效命中数（不含 no_answer 与 失败）
             "time_s": 1.23,
             "indicators": {
-                "HY_OAS": {"query":"...", "answer":"...", "value":"263 bps", "time_s":0.09},
-                ...
+                "HY_OAS": {"query":"...", "answer":"...", "value":"263 bps",
+                           "source":"oriosearch", "time_s":0.09},
+                # source 取值:
+                #   "oriosearch"  有返回且含有效数据（计入 hit）
+                #   "no_answer"   有返回但为"无有效信息"模板回复（不计入 hit）
+                #   "失败"        接口无返回/超时
             }
         }
     """
@@ -1473,17 +1726,23 @@ def fetch_web_indicators():
             t = time.time() - t0
             result["time_s"] += t
 
-            if answer:
+            if answer and _is_no_answer(answer):
+                # 有返回但属"无有效信息"模板句 → 单独标记，不计入 hit
+                val = "N/A(无有效答案)"
+                src = "no_answer"
+            elif answer:
                 result["hit"] += 1
                 val = _extract_indicator_value(answer)
+                src = "oriosearch"
             else:
                 val = "N/A"
+                src = "失败"
 
             result["indicators"][key] = {
                 "query": queries[key],
                 "answer": (answer or "")[:300],
                 "value": val,
-                "source": "oriosearch" if answer else "失败",
+                "source": src,
                 "time_s": round(t, 2),
             }
 
