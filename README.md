@@ -29,6 +29,7 @@ tiger-stock-strategy-analysis/
 ├── docs/                     # 各模块作业指导书
 │   ├── 大盘与板块和资金流向分析/   # 大盘分析（美股/加密货币…）
 │   ├── 美股选股/               # 做多/做空选股
+│   ├── 加密货币选择/            # 做多/做空选币（含选币操作手册）
 │   ├── vnpy整体持仓分析与风控/   # 持仓分析与风控
 │   ├── Martingale-Grid-Trading-Strategy/  # 马丁格尔网格策略
 │   ├── Tiger-Grid-Template/   # CTA 策略基类模板
@@ -39,7 +40,9 @@ tiger-stock-strategy-analysis/
 │   ├── get_market_data.py     # 统一数据入口脚本
 │   ├── test_get_market_data.py
 │   ├── sync_stock_pool.py     # 选股池数据校验
+│   ├── sync_crypto_pool.py    # 选币池数据校验
 │   ├── stock_pool.json        # 美股选股池
+│   ├── crypto_pool.json       # 加密货币选币池
 │   └── vt_symbol_info.json    # 盈透 conid 对照表
 └── 复盘记录/                   # 复盘分析结果（按日期归档）
 ```
@@ -71,14 +74,25 @@ tiger-stock-strategy-analysis/
 - 执行流程：[00_index.md](docs/美股选股/00_index.md)
 - 报告：`cta_report_get(report_kind="美股做多选股结果")` / `报告="美股做空选股结果"`
 
-### 3.3 vnpy 整体持仓分析与风控
+### 3.3 加密货币选币模块
+
+触发词：选币、加密做多候选、加密做空候选、评分卡等。
+
+- 做多：参照 [加密货币做多选择.md](docs/加密货币选择/加密货币做多选择.md)，筛选「叙事成长型」标的（代币经济学 + 协议基本面 + 资金面）
+- 做空：参照 [加密货币做空选择.md](docs/加密货币选择/加密货币做空选择.md)，筛板块过热/解锁抛压标的，**必过轧空风险与做空成本两道闸**
+- 选币池：[选币操作手册.md](docs/加密货币选择/选币操作手册.md)（数据源 `scripts/crypto_pool.json`）
+- 执行流程：[00_index.md](docs/加密货币选择/00_index.md)
+- 报告：`cta_report_get(report_kind="加密货币做多选股结果")` / `报告="加密货币做空选股结果"`
+- ⚠️ 可交易性：候选必须与 `get_all_contracts`（BINANCE_LINEAR）求交集，`vt_symbol` 以系统返回为准
+
+### 3.4 vnpy 整体持仓分析与风控
 
 触发词：持仓分析、账户风控、整体仓位等。
 
 - 入口：[00_index.md](docs/vnpy整体持仓分析与风控/00_index.md)
 - 覆盖：账户风险评估、各策略持仓盈亏、结合大盘判断机会/风险、必要时发控制命令
 
-### 3.4 策略分析文档
+### 3.5 策略分析文档
 
 | 策略类型 | 核心逻辑 | 入口文档 |
 |---------|---------|---------|
@@ -86,7 +100,7 @@ tiger-stock-strategy-analysis/
 | 多信号权重评分趋势策略 (Multi_Signal_Treand) | 多信号权重评分，高分开仓，止盈/止损离场 | [docs/Multi_Signal_Treand_Strategy.md](docs/Multi_Signal_Treand_Strategy.md) |
 | CTA 趋势策略基类 (tiger_grid_template) | 策略基类原理（一般无需深入） | [docs/Tiger-Grid-Template/00_index.md](docs/Tiger-Grid-Template/00_index.md) |
 
-### 3.5 调仓
+### 3.6 调仓
 
 | 文档 | 用途 |
 |------|------|
@@ -179,11 +193,49 @@ python scripts/sync_stock_pool.py
 
 > 数据源：`stock_pool.json` — AI 直接修改此文件即可更新选股池，无需改 Python 代码。
 
+### refill_stock_pool_t3.py
+
+为美股选股池补充 **Tier 3（潜力小盘）**：维基百科 S&P 600 / S&P 400 成分表（含 GICS Sub-Industry）→ 映射到池子的子板块 → `get_market_data.py` 逐个验证（市值 $1B-$5B、价格 ≥ $3、日均成交额 ≥ $5M）→ 每个子板块按流动性降序取前 N 只。
+
+**用法：**
+```bash
+python scripts/refill_stock_pool_t3.py                    # 预演（dry-run，不写文件）
+python scripts/refill_stock_pool_t3.py --apply            # 写回 stock_pool.json 并自动跑校验
+python scripts/refill_stock_pool_t3.py --only=15105010    # 只补指定子板块（增量）
+python scripts/refill_stock_pool_t3.py --apply --per=5    # 每个子板块补到 5 只（默认 3）
+python scripts/refill_stock_pool_t3.py --refresh          # 忽略行情缓存，全量重取
+```
+
+> 数据源：维基百科 S&P 600 / S&P 400 成分表 + `get_market_data.py`；只改 `stock_pool.json` 的 `sub_sectors.*.tiers.T3` 与 `meta` 时间戳/快照，不动 T1/T2。
+> 依赖：`pandas`（+ `lxml`，`read_html` 用）——已随 `get_market_data.py` 安装。
+> 行情缓存：`scripts/temp/refill_t3_quotes.json`（便于反复预演）；候选映射表 `MAP` / 人工补充 `EXTRA` 在脚本内，GICS 调整时需复核。
+
+### sync_crypto_pool.py
+
+校验加密货币选币池数据（`crypto_pool.json`）：结构、分类/tier 与 coins 的一致性、硬排除规则（稳定币/杠杆代币/封装币）、高弹性占比（≥20%），并输出统计。
+
+**用法：**
+```bash
+python scripts/sync_crypto_pool.py
+```
+
+> 数据源：`crypto_pool.json` — AI 直接修改此文件即可更新选币池，无需改 Python 代码。
+> 注意：本脚本不联网，**不校验 yahoo 符号是否真的有效**——需先跑 `get_market_data.py --market crypto --tickers ...` 批量校验并置 `yahoo_verified=true`。
+
 ---
 
 ## 六、vnpy 系统附带的 openclaw 智能体必须的定时任务
 
 为建立分析用的数据缓存，需要建立定时任务，不然分析模块就会缺乏数据。
+
+> **⚠️ 命名铁律（踩过坑）**：在 vnpy 里建任务时，**任务名 = 分析报告名 = `分析任务/<任务名>/` 落盘文件夹名**（配置见 `.vntrader/macro_analyze.json` 的 tasks key）。必须与技能文档中定义的名字**逐字一致**，否则策略侧 `cta_report_get(report_kind="…")` 会永远取不到报告（曾出现任务名写「数字币大盘与板块和资金流向分析」、文档写「加密货币大盘与板块和资金流向分析」，导致加密策略读不到大盘报告）。
+>
+> - 美股大盘：`美股大盘与板块和资金流向分析`
+> - 加密货币大盘：`加密货币大盘与板块和资金流向分析`
+> - 美股做多/做空：`美股做多选股结果` / `美股做空选股结果`
+> - 加密货币做多/做空：`加密货币做多选股结果` / `加密货币做空选股结果`
+>
+> 改名时需同步 4 处：`macro_analyze.json`（key + `name`）、`macro_analyze_state.json`（key）、`strategy_session_map.json`（`macro::<任务名>` key）、落盘目录 `Strategy_OpenClaw_Records/分析任务/<任务名>/`。
 
 ### 例如 美股
 在 vnpy 系统中建立定时分析任务，每日开盘前一次，以下任务提示经过验证，具备较高执行稳定性。
@@ -215,13 +267,18 @@ python scripts/sync_stock_pool.py
 
 1. 使用 tiger-stock-strategy-analysis 技能的"大盘与板块和资金流向分析模块"的能力！
 2. 分析周期：短线周期（未来1-10个交易日）
-3. 执行 Step 0.1 全部三次数据获取：
-   - python scripts/get_market_data.py --market crypto --batch crypto-all --output json
-   - python scripts/get_market_data.py --fetch-url all --output json
-   - python scripts/get_market_data.py --fetch-url calendar --output json   ← 必须执行，不得跳过！
-4. 强制不使用任何缓存，本次全量重分析
+3. 执行 Step 0.1 数据获取（前三条必须执行，不得跳过）：
+   - python scripts/get_market_data.py --market crypto --batch crypto-all --output json        ← 必须执行，不得跳过！
+   - python scripts/get_market_data.py --market us_stocks --batch us-all --output json         ← 必须执行，不得跳过！（跨市场联动：QQQ / US10Y / DXY / ^VIX / HYG·LQD）
+   - python scripts/get_market_data.py --fetch-url calendar --output json                      ← 必须执行，不得跳过！
+   - 加密货币专属指标（BTC.D、TOTAL/TOTAL2、稳定币市值、资金费率、OI、交易所净流入、Crypto Fear & Greed、BTC/ETH ETF 净流入、DeFi TVL）按 Step 0.3 三层预算用 web_search：核心必查约 8 次必做；条件触发按条件；背景参考仅中期
+   - ⚠️ 不要执行 --fetch-url all（ICI 为美股专用，本市场不适用）
+   - ⚠️ 不要用 vnpy_mcp 的 get_history_bars 取美股数据（未连 IB 网关时返回空，会被误判为数据缺失）
+4. 强制不使用任何缓存，本次全量重分析：先删除 scripts/.yf_history_cache（30 分钟历史缓存）；scripts/.yf_info_cache（12 小时）可选删除——删除会加剧限流，遇限流按 Step 0.3「重试容忍度」处理并记入「采集脚本失败项」
 5. 输出必须严格按 加密货币市场.md 中【六、输出模板】的 JSON 格式，字段名必须完全一致（中文 key）
-6. 回答中输出JSON，不要保存到文件。
+6. 跨市场边界：美股大盘报告为可选旁证——存在且近 3 日内可引用并注明来源；不存在或过期则直接跳过（不等待、不标 missing、不降置信度）
+7. 任务名（= 报告名 = 落盘文件夹名）必须为：加密货币大盘与板块和资金流向分析（不得自定义）
+8. 回答中输出JSON，不要保存到文件。
 
 ```
 

@@ -1,4 +1,4 @@
-"""
+r"""
 校验美股选股池数据（stock_pool.json）
 
 用法:
@@ -15,6 +15,13 @@
 import json
 import sys
 import os
+
+# 强制 stdout/stderr 使用 UTF-8：避免在 GBK 控制台 / 管道（如 | Select-String）下打印 ✅ 时崩溃
+for _s in (sys.stdout, sys.stderr):
+    try:
+        _s.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
 
 # 数据文件路径（与脚本同目录）
 _DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stock_pool.json")
@@ -132,11 +139,18 @@ def main():
         len(info["tiers"]["T2"])
         for info in data["sub_sectors"].values()
     )
+    tier3_count = sum(
+        len(info["tiers"]["T3"])
+        for info in data["sub_sectors"].values()
+    )
+    empty_t3 = sum(
+        1 for info in data["sub_sectors"].values() if not info["tiers"].get("T3")
+    )
     print(f"\n  子板块数:     {sub_sector_count}")
     print(f"  Tier 1 龙头:  {tier1_count} 只")
     print(f"  Tier 2 中盘:  {tier2_count} 只")
-    print(f"  Tier 3 小盘:  动态更新")
-    print(f"  总计:         {total_tickers} 只（不含动态 T3）")
+    print(f"  Tier 3 小盘:  {tier3_count} 只（{empty_t3} 个子板块 T3 为空）")
+    print(f"  总计:         {tier1_count + tier2_count + tier3_count} 只（含 T3；去重后 {total_tickers} 只）")
 
     print("\n" + "=" * 60)
     print("✅ 校验完成！选股池数据有效（数据源: stock_pool.json）")

@@ -176,11 +176,13 @@ CRYPTO_MAJORS_TICKERS = ["BTC-USD", "ETH-USD"]
 CRYPTO_ALT_L1 = {
     "SOL-USD": "Solana",
     "AVAX-USD": "Avalanche",
-    "SUI-USD": "Sui（yfinance 可能无数据，fallback web_search）",
+    # SUI 必须用 Yahoo 消歧符号 SUI20947-USD：SUI-USD 取不到数据
+    # （实测 2026-09-13：SUI-USD 报 Rate limited，SUI20947-USD 正常返回价格）
+    "SUI20947-USD": "Sui",
     "NEAR-USD": "NEAR Protocol",
     "APT21794-USD": "Aptos",
 }
-CRYPTO_ALT_L1_TICKERS = ["SOL-USD", "AVAX-USD", "SUI-USD", "NEAR-USD", "APT21794-USD"]
+CRYPTO_ALT_L1_TICKERS = ["SOL-USD", "AVAX-USD", "SUI20947-USD", "NEAR-USD", "APT21794-USD"]
 
 CRYPTO_DEFI = {
     "AAVE-USD": "Aave",
@@ -206,6 +208,15 @@ CRYPTO_INFRA = {
     "AR-USD": "Arweave",
 }
 CRYPTO_INFRA_TICKERS = ["LINK-USD", "RENDER-USD", "FET-USD", "AR-USD"]
+
+# 交易所板块（**按需取用**，不并入 crypto-all）
+# 用途：加密文档 Step 0.3-B 条件触发「头部交易所代币（BNB 等）单日跌幅 > 5%」需要 BNB 价格
+# 不并入理由：Step 2 板块轮动观察标的只有 大盘锚/L1/DeFi/Meme/基础设施 五类，
+#            保持 crypto-all 与文档口径一致，避免每次全量都多拉一个条件触发币
+CRYPTO_EXCHANGE = {
+    "BNB-USD": "币安币（交易所板块）",
+}
+CRYPTO_EXCHANGE_TICKERS = ["BNB-USD"]
 
 # 合并所有 crypto labels（用于 crypto-all 超级批次）
 CRYPTO_ALL_LABELS = {}
@@ -233,12 +244,13 @@ BATCHES = {
     "crypto-defi":      {"tickers": CRYPTO_DEFI_TICKERS,          "labels": CRYPTO_DEFI,          "desc": "DeFi 板块"},
     "crypto-meme":      {"tickers": CRYPTO_MEME_TICKERS,          "labels": CRYPTO_MEME,          "desc": "Meme 板块"},
     "crypto-infra":     {"tickers": CRYPTO_INFRA_TICKERS,         "labels": CRYPTO_INFRA,         "desc": "基础设施"},
+    "crypto-exchange":  {"tickers": CRYPTO_EXCHANGE_TICKERS,      "labels": CRYPTO_EXCHANGE,      "desc": "交易所板块（条件触发用，不含在 crypto-all）"},
 }
 
 # 市场 → 可用批次
 MARKET_BATCHES = {
     "us_stocks":  ["us-all", "us-major-indices", "us-macro", "us-sectors", "us-style"],
-    "crypto":     ["crypto-all", "crypto-majors", "crypto-alt-l1", "crypto-defi", "crypto-meme", "crypto-infra"],
+    "crypto":     ["crypto-all", "crypto-majors", "crypto-alt-l1", "crypto-defi", "crypto-meme", "crypto-infra", "crypto-exchange"],
     "china_stocks":  [],
     "china_futures": [],
     "hk_stocks":     [],
@@ -1125,6 +1137,21 @@ def fetch_news(ticker):
 
 
 def fetch_ratings(ticker):
+    """
+    获取机构评级（**安全入口：永不抛异常**）
+
+    降级背景：币种（BTC-USD 等）、指数等标的没有分析师评级，MarketBeat 页面结构与
+    个股不同，正则可能抓到纯标点（如 "."）导致 float() 抛 ValueError。
+    若异常向外传播，会同批拖垮同一流程里的 news 与 technical
+    （见 fetch_product_all_info 的调用顺序），故此处统一兜底为 {"error": ...}。
+    """
+    try:
+        return _fetch_ratings_inner(ticker)
+    except Exception as e:
+        return {"error": f"评级获取失败（已降级，不影响新闻/技术指标）: {type(e).__name__}: {e}"}
+
+
+def _fetch_ratings_inner(ticker):
     """
     从 MarketBeat 获取机构评级
 

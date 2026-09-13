@@ -84,9 +84,11 @@ ping → "pong"（服务正常）
 
 | 工具 | 用途 |
 |------|------|
-| `cta_strategy_get_parameters_info` | 获取指定策略显式暴露的关键参数说明（名称/类型/当前值/描述） |
+| `cta_strategy_get_parameters_info` | 获取指定策略**全部参数**的定义和说明（动态生成，含 `value` / `type` / `description` / `name_cn` 中文名 / `mcp_control`） |
 
 参数：`strategy_name`。
+
+> `mcp_control`：`true`=允许 MCP 修改；`false`=只读展示（`cta_strategy_set_parameters` 会拒绝修改）。
 
 ### 4.4 策略类型查询（新增策略前使用）
 
@@ -97,13 +99,30 @@ ping → "pong"（服务正常）
 
 ```json
 // cta_strategy_get_classes 返回示例
-[{"class_name": "openclaw_martin_Strategy", "author": "Tiger Trader"}]
+[
+  {"class_name": "openclaw_martin_Strategy", "author": "Tiger Trader"},
+  {"class_name": "Multi_Signal_Treand_Strategy", "author": "Tiger Trader"}
+]
 
 // cta_strategy_get_class_parameters 返回示例（仅 init_important=True 的必填参数）
 {"class_name": "openclaw_martin_Strategy", "required_parameters": {"init_load_days": {"value": 5, "type": "int", "description": "策略运行需要历史行情的前置天数"}, ...}}
 ```
 
 > 新增策略流程：`cta_strategy_get_classes` -> `cta_strategy_get_class_parameters` -> `search_vt_symbol` -> `cta_strategy_add_and_start`
+
+### 4.5 持仓决策上下文
+
+| 工具 | 用途 | 关键参数 |
+|------|------|---------|
+| `cta_strategy_get_all_reason` | 获取策略当前持仓的完整决策上下文（**修改参数或评估持仓前建议先调用**）：`持仓上下文`（当前持仓/方向/开仓时间/首仓价）、`开仓时的AI分析`、`最近一次AI分析`、`本次持仓交易历史`、`参数最近修改`（每参数最近一次 from/to/source/reason，不做持仓时间过滤）、`说明` | `strategy_name` |
+
+> `参数最近修改.source` 取值：`manual`（UI 手动）/ `mcp`（外部智能体）/ `ai`（OpenClaw 落地）/ `config`（配置加载）/ `reset`（复位）。`manual`/`mcp` 的参数是刻意设置的，无充分行情依据不建议修改；确需修改应在 reason 中写明推翻原因。
+
+### 4.6 策略交易历史
+
+| 工具 | 用途 | 关键参数 |
+|------|------|---------|
+| `cta_strategy_get_trade_history` | 策略自创建以来的完整交易历史（读本地 `.vntrader/Trade_Records/{strategy_name}-{vt_symbol}.trades_txt`，**含已平仓轮次**；交易列表按时间倒序，`持仓价`=交易后持仓均价；策略需在实盘模式运行过才有该文件） | `strategy_name`（必填）、`limit`（不传=全部，传则返回最近 N 条） |
 
 ---
 
@@ -134,17 +153,36 @@ ping → "pong"（服务正常）
 - `美股做空选股结果`
 - 各策略分析记录（按 `strategy_name` 查询）
 
+`cta_report_list` 返回结构（示例）：
+```json
+{
+  "分析报告": [
+    {"报告名称": "美股大盘与板块和资金流向分析", "报告数量": 5, "最新报告": "20260731_094309"}
+  ],
+  "策略分析记录": [
+    {"策略名称": "MARTIN-AMD", "分析报告数量": 6, "最新分析报告": "20260722_120537",
+     "订单审核数量": 2, "最新订单审核": "20260806_110000"}
+  ]
+}
+```
+
+> - 两类报告均为**本地落盘文件**（`.vntrader/Strategy_OpenClaw_Records/`）；返回"报告不存在"时，需先触发对应 AI 分析任务生成后重试
+> - 策略分析记录区分 `analyze-*.json`（AI 分析）与 `order-*.json`（订单审核），某类无记录则对应字段不出现
+> - `report_index` 支持负数（-1=最新，-2=倒数第二）
+
 ---
 
 ## 7. 行情与合约
 
-| 工具 | 用途 |
-|------|------|
-| `get_tick` | 获取指定合约最新 Tick 行情（参数 `vt_symbol`） |
-| `get_history_bars` | 获取指定合约历史 K 线（参数 symbol/exchange/gateway_name/start/interval） |
-| `get_contract` | 获取指定合约信息（参数 `vt_symbol`） |
-| `get_all_contracts` | 获取所有合约 |
-| `search_vt_symbol` | 搜索 vt_symbol / 查询 ConID 对应品种 |
+| 工具 | 用途 | 关键参数 |
+|------|------|---------|
+| `get_tick` | 获取指定合约最新 Tick 行情 | `vt_symbol` |
+| `get_history_bars` | 获取指定合约历史 K 线。**推荐直接传 `vt_symbol`**（服务端自动解析 symbol/exchange/gateway_name）；或传 `symbol`+`exchange`+`gateway_name` 三参数（必须取自 `get_contract` / `get_all_contracts` 返回字段，严禁自行猜测） | `vt_symbol` / `symbol`、`exchange`、`gateway_name`、`interval`（可选 `1m`/`1h`/`d`，默认 `1m`）、`start`、`end`（日期，缺省为当天） |
+| `get_contract` | 获取指定合约信息 | `vt_symbol` |
+| `get_all_contracts` | 获取所有已注册（已订阅）的合约信息 | 无 |
+| `search_vt_symbol` | 搜索合约的 vt_symbol（支持 IB 实时查询 + 本地文件）；返回 `vt_symbol`、`ticker`、`name`、`gateway`、`source` 等 | `query`（ticker / 名称 / conid，如 AAPL、苹果、265598）、`market`（可选 `IB`/`BINANCE`/`CTP`/`A`，默认全量；`IB` 时优先实时向网关查询确保 conid 最新） |
+| `subscribe_contract` | 订阅合约 Tick 行情（**策略创建时会自动订阅，通常无需手动调用**；仅用于提前查看行情或未被策略使用的合约） | `vt_symbol`、`gateway_name` |
+| `get_gateways` | 查询已注册的交易所网关及其连通状态（名称、是否连通、支持的交易所、已订阅合约数、账户数） | 无 |
 
 ---
 
@@ -160,9 +198,11 @@ ping → "pong"（服务正常）
 |------|------|---------|
 | `cta_strategy_set_target_pos` | 设置策略目标仓位（**绝对数量**，正数=多，负数=空，0=空仓） | `strategy_name`、`target_pos`（number，必填）、`reason`（可选） |
 | `cta_strategy_close` | 执行策略平仓（设置目标仓位为 0） | `strategy_name`、`reason`（可选） |
-| `cta_strategy_set_parameters` | 修改策略运行参数（立即生效，无需重启） | `strategy_name`、`parameters`（object，必填） |
-| `cta_strategy_send_notice` | 向策略发送通知信息（是通知不是指令，仅用于记录信息） | `strategy_name`、`message`（必填） |
-| `cta_strategy_get_parameters_info` | 修改参数前先了解参数说明（返回部分关键参数，并非全部） | `strategy_name` |
+| `cta_strategy_set_parameters` | 修改策略运行参数（立即生效，无需重启） | `strategy_name`、`parameters`（object，必填）、`reason`（建议必填，缺省记为 "MCP"） |
+| `cta_strategy_send_notice` | 向策略发送**短期通知**（写入 `openclaw_notice` 参数，随 AI 分析提示词注入；自动加时间戳，最新一条为准；不支持该参数的策略仅写日志） | `strategy_name`、`message`（必填） |
+| `cta_strategy_send_user_remark` | 为策略设置**用户备注**（长期指令/约束：写入 `openclaw_user_remark`，长期有效、新备注覆盖旧备注，随 AI 分析提示词注入；不支持该参数的策略仅写日志） | `strategy_name`、`message`（必填） |
+| `cta_strategy_set_main_approach` | 设置**策略核心思路**（本品种长期操作范式，写入 `openclaw_main_approach`；**AI 只读**、各轮决策须对齐；不自动加时间戳，可带 `reason` 留痕；不支持该参数的策略仅写日志） | `strategy_name`、`message`（必填）、`reason`（建议必填） |
+| `cta_strategy_get_parameters_info` | 修改参数前先了解参数说明（返回**全部参数**定义，含 `name_cn` / `mcp_control`） | `strategy_name` |
 | `cta_strategy_start` | 启动策略（未初始化则先初始化再启动） | `strategy_name` |
 | `cta_strategy_stop` | 停止策略（不删除策略，仅停止交易） | `strategy_name` |
 | `cta_strategy_add_and_start` | 新增并启动策略 | `class_name`、`strategy_name`、`vt_symbol`（`setting` 可选） |
@@ -181,6 +221,7 @@ cta_strategy_set_target_pos(
 ```
 
 > **注意**：`target_pos` 是**绝对数量**（如 100 股），不是资金比例（0.5 ≠ 50% 仓位）。设为 0 等同于平仓（与 `cta_strategy_close` 等效）。
+> **加仓 / 设目标仓位前必须先核算可用资金**（`cta_strategy_get_status` 取持仓/杠杆 → `get_accounts` 取余额 → `get_tick` 取现价 → 增仓数量×现价÷杠杆+缓冲 ≤ 可用资金）；资金不足时不要下单，避免被拒单。
 
 #### close — 平仓
 
@@ -200,13 +241,14 @@ cta_strategy_set_parameters(
     parameters={
         "stop_loss_radio": 0.02,     # 固定止损比例
         "enable_martin_sub": True    # 允许网格盈利仓减仓
-    }
+    },
+    reason="价格波动加剧，收紧止损"   # 建议必填；缺省时记为 "MCP"
 )
 ```
 
-> **注意**：`parameters` 键=参数名（字符串），值=新值（**保持原始类型**，float 传 `0.02` 而非 `"2%"`）。只传需要修改的参数，未传入的保持不变；参数立即写入并保存，重启后不丢失。参数改变**不会主动触发交易动作**（如改方向需等下一个信号才会按新方向操作）。
+> `parameters` 键=参数名（字符串），值=新值（**保持原始类型**，float 传 `0.02` 而非 `"2%"`）。只传需要修改的参数，未传入的保持不变；参数立即写入并保存，重启后不丢失。参数改变**不会主动触发交易动作**（如改方向需等下一个信号才会按新方向操作）。`mcp_control=false` 的参数会被拒绝修改。
 
-#### send_notice — 发送通知
+#### send_notice — 发送短期通知
 
 ```python
 cta_strategy_send_notice(
@@ -214,6 +256,31 @@ cta_strategy_send_notice(
     message="注意风控：大盘风险等级升高"
 )
 ```
+
+> 写入 `openclaw_notice` 参数（source=mcp，计入参数修改历史），随 AI 分析提示词注入并持久化到策略设置；头部自动加 `[YYYY-MM-DD HH:MM:SS]` 时间戳（调用方无需自行添加），**最新一条为准**。不支持该参数的策略仅写策略日志（AI 不可见）。
+
+#### send_user_remark — 设置用户备注（长期）
+
+```python
+cta_strategy_send_user_remark(
+    strategy_name="MARTIN-AAPL",
+    message="回撤超 5% 停止加仓"
+)
+```
+
+> 写入 `openclaw_user_remark` 参数（source=mcp，计入参数修改历史），**长期有效、新备注覆盖旧备注**，随 AI 分析提示词注入；自动加时间戳。不支持该参数的策略仅写策略日志。
+
+#### set_main_approach — 设置策略核心思路（长期锚点）
+
+```python
+cta_strategy_set_main_approach(
+    strategy_name="MARTIN-AAPL",
+    message="网格收波：震荡区间内等距加仓、逐格止盈，趋势确立后转趋势跟随",
+    reason="复盘发现本品种近月以区间震荡为主，锚定打法"   # 建议必填，计入参数修改历史
+)
+```
+
+> 写入 `openclaw_main_approach` 参数：本品种**长期操作范式**（分红吃息/趋势跟随/均值回归/动量轮动/网格收波/市场中性/波动率等），**AI 只读不可改**、各轮决策须与其保持一致。**不自动加时间戳**（它是状态描述而非消息，写入时间见 `cta_strategy_get_all_reason` 的 `参数最近修改`）。换打法才改，不是调参。
 
 #### 启停策略
 
@@ -240,11 +307,14 @@ cta_strategy_delete(strategy_name="MARTIN-AAPL")
 ```
 
 > **注意**：删除前若 `pos != 0` 会拒绝删除，需先 `cta_strategy_close` 平仓。
+> **openclaw_martin 新增必填 `openclaw_main_approach`**（策略核心思路，init_important）：`setting` 中留空该参数会被拒绝创建；建议事后用 `cta_strategy_set_main_approach` 语义化写入。
+> **初始化耗时**：openclaw_martin 的 `init_load_days` 建议 5-7 天（过长易超时）；Multi_Signal_Treand 需 30 天左右、初始化较慢，返回超时后稍候用 `cta_strategy_get_status` / `cta_strategies_get_all` 检查，`inited=True` 未启动可用 `cta_strategy_start` 手动启动。
 
 ### 8.3 注意事项
 
 - 操作工具需明确 `strategy_name`（策略名称），避免操作错误策略。
 - 调仓前建议先用 `cta_strategy_get_status` 查询当前持仓和参数，确认目标仓位合理。
+- **投递与路由**：操作类命令经 event_engine 投递到事件线程执行（线程安全），并按 `strategy_name` **精确路由**——目标策略未创建或未运行时立即返回明确错误（不静默等待 30 秒超时）；多策略并行时命令互不影响。`add_and_start` 返回成功后的毫秒级窗口内 handler 可能尚未注册，此时命令走超时兜底（不会误执行到别的策略）。
 
 ---
 

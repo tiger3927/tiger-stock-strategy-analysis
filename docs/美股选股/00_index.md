@@ -197,8 +197,11 @@ AI 按以下矩阵判断下一个可能轮动/流出的板块。**满足 2 条�
 2. **当前主线板块** — 如果无明确预测或预测置信度低，使用当前主线板块
 3. **用户指定板块** — 如果用户指定了板块偏好，优先使用该板块的候选股
 4. **全市场扫描** — 以上均不适用时，按 `选股操作手册.md` 方式二全网扫描
+5. **固定池过滤（兜底）** — 上述搜索 / 取数失败时，直接读 `scripts/stock_pool.json`（调仓池：29 个 GICS 子板块 / T1·T2·T3），按目标板块与 `mcap_bucket` 过滤候选（不依赖网络）
 
-> **做空方向适配**：候选池来源以预测流出板块和其他过热板块为主。在 `选股操作手册.md` 的搜索关键词中，做空方向应使用高估/泡沫相关的搜索词（如 `"overvalued stocks high P/E bubble 2026"`），而非做多方向的低估/增长关键词。
+> **⚠️ 池外探测（每次必做）**：无论走哪一档，都必须按 `选股操作手册.md` §七 执行池外探测（`web_fetch` 直取指数成分 / ETF holdings / 筛选页），把当期新标的纳入视野。**固定池是种子，不是边界。**
+
+> **做空方向适配**：候选池来源以预测流出板块和其他过热板块为主。取数时做空方向应使用高估/泡沫相关的筛选条件（`overvalued` / `high P/E` / `bubble` 类），而非做多方向的低估 / 增长条件。
 
 **候选池大小控制**：总候选数控制在 20-40 只。如果超出，按市值从大到小截断。
 
@@ -216,12 +219,15 @@ python scripts/get_market_data.py --market us_stocks --tickers TICKER1,TICKER2,.
 
 ### Step 4：基本面快速过滤
 
-对候选池中的每只标的，搜索基本面指标。**优先批量搜索**，减少调用次数。
+对候选池中的每只标的取基本面指标。**优先一次批量取数**（`get_market_data.py` 已返回 `pe_ratio` / `pb_ratio` / `roe` / `revenue_growth` / `sector` / `industry`）。
 
 ```bash
-# 批量搜索候选股的基本面数据（PE、PEG、营收增速、EPS增速等）
-web_search "{ticker1}, {ticker2}, {ticker3} PE ratio PEG revenue growth EPS growth 2026"
+# 首选：批量取数（一次覆盖候选池全部 ticker，可与 Step 3 合并为同一次调用）
+python scripts/get_market_data.py --market us_stocks --tickers TICKER1,TICKER2,... --output json
 ```
+
+> 脚本不返回的字段（PEG / EPS 增速 / FCF 收益率 / 净债务·EBITDA）：用 `web_fetch` 直取 stockanalysis.com 或 finviz 的财务摘要页补齐。
+> 取数缺失（`pe_ratio` / `roe` / `revenue_growth` 为 null）→ 标记该标的 `fundamental_missing` 并降一档评分，**不得编造**。`web_search` 仅用于发现 URL（本环境只返回标题与链接、无正文）。
 
 **过滤规则**（满足以下至少 3 条即进入下一轮）：
 
@@ -287,7 +293,7 @@ web_search "{ticker1}, {ticker2}, {ticker3} PE ratio PEG revenue growth EPS grow
 python scripts/get_market_data.py --fetch-url product-all-info --ticker TICKER --output json
 ```
 
-同时用 `web_search` 补充以下信息：
+同时用 `web_fetch` 直取以下信息（`web_search` 仅作入口，本环境只返回标题与链接、无正文）：
 
 | 信息维度 | 搜索指令示例 |
 |---------|-------------|
@@ -506,11 +512,15 @@ web_search "{ticker} insider buying selling 2026"
 | 数据类别 | 首选方式 | 降级方式 |
 |---------|---------|---------|
 | 大盘环境 | `cta_report_get` 读取 `美股大盘与板块和资金流向分析` 报告 | 执行大盘分析模块 |
-| 板块相对强弱 | `get_market_data.py --batch us-sectors` | `web_search` 逐个查询板块 ETF |
-| 候选池价格/均线/成交量 | `get_market_data.py --tickers` | `web_search` 逐个查询 |
-| 基本面指标（PE/PEG/增速） | `web_search` 批量搜索 | 逐个搜索 |
-| 新闻/评级/财报日期 | `get_market_data.py --fetch-url product-all-info` | `web_search` |
-| 内幕交易/催化剂 | `web_search` | — |
+| 板块相对强弱 | `get_market_data.py --batch us-sectors` | `web_fetch` 直取板块 ETF 页面 |
+| 候选池价格/均线/成交量 | `get_market_data.py --tickers` | `web_fetch` 直取行情页 |
+| 基本面指标（PE / ROE / 营收增速） | **`get_market_data.py --tickers`**（返回 `pe_ratio` / `pb_ratio` / `roe` / `revenue_growth`） | `web_fetch` 直取 stockanalysis.com / finviz 财务页 |
+| PEG / EPS 增速 / FCF / 净债务·EBITDA | **`web_fetch` 直取财务摘要页**（脚本不返回这些字段） | — |
+| 新闻/评级/财报日期 | `get_market_data.py --fetch-url product-all-info` | `web_fetch` 直取公告页 |
+| 内幕交易/催化剂 | **`web_fetch` 直取**（OpenInsider / 公司公告 / SEC 文件） | — |
+| 池外探测清单（§七） | **`web_fetch` 直取指数成分 / ETF holdings / 筛选页** | 固定池 `scripts/stock_pool.json` 兜底 |
+
+> **⚠️ 取数铁律（2026-09-13 修订）**：本环境 `web_search` **只返回标题与链接、不返回正文** → 上表所有数据必须用 `get_market_data.py` 或 `web_fetch` 直取；`web_search` 仅用于发现 URL。取不到的数据按 §四 标 `missing`，**不得编造**。
 
 ---
 
@@ -521,6 +531,7 @@ web_search "{ticker} insider buying selling 2026"
 | 某只标的的基本面数据无法获取 | 标记该标的 `fundamental_data_missing`，跳过该标的 |
 | 某只标的的技术面数据缺失 | 标记该标的 `technical_data_missing`，跳过该标的 |
 | 大盘报告不存在 | 先执行大盘分析模块，再继续选股 |
+| 池外探测（§七）清单取数失败 | 降级为「固定池过滤」（`scripts/stock_pool.json`），并在 `数据缺失与冲突` 中说明入口失败原因 |
 | 候选池中超过 50% 标的无法获取数据 | 降低置信度，在输出中标注 `low_data_quality` |
 | 所有标的评分均 < 3.5 | 输出「当前未找到符合条件的标的」，列出评分最高的 3 只及差距 |
 
@@ -532,13 +543,13 @@ web_search "{ticker} insider buying selling 2026"
 |------|------------|
 | Step 1 读大盘报告 | 1 |
 | Step 1.5 获取板块数据 | 1 |
-| Step 3 获取候选池数据 | 1-2 |
-| Step 4 基本面搜索 | 2-3 |
+| Step 2 池外探测（web_fetch 取清单 + 取数验证） | 3-5 |
+| Step 3+4 候选池与基本面取数（可合并为同一次 `--tickers` 调用） | 1-2 |
 | Step 6 深度尽调（product-all-info） | 3-5 |
-| Step 6 深度尽调（web_search） | 5-8 |
-| Step 7.5 反方审查（web_search） | 2-3 |
+| Step 6 深度尽调（web_fetch 直取） | 3-5 |
+| Step 7.5 反方审查（web_fetch 直取） | 2-3 |
 | Step 10 输出结果 | 0 |
-| **合计** | **≤ 25 次** |
+| **合计** | **≤ 30 次** |
 
 超出预算仍未完成时，停止取数，将未获取项全部标记 `missing` 并下调置信度，直接输出。
 
@@ -582,6 +593,7 @@ AI 完成分析后，必须按以下 JSON 格式返回结果：
     },
     "候选池摘要": {
         "总候选数": 30,
+        "池外探测": {"是否执行": true, "入口数": 0, "差集候选数": 0, "并入数": 0, "未通过原因": []},
         "通过基本面过滤": 12,
         "通过技术面过滤": 6,
         "通过深度尽调": 4,

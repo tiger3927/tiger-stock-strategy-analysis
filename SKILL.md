@@ -1,6 +1,6 @@
 ---
 name: "tiger-stock-strategy-analysis"
-description: "股票量化策略分析工具：为 vnpy 量化软件提供策略分析和下单前审核。支持智能马丁格尔策略(openclaw-martin)、多信号权重评分趋势策略（Multi\_Signal\_Treand）；vnpy整体持仓分析与风控；大盘与板块和资金流向分析；做多做空选股；vnpy量化系统全局配置答疑与修改；"
+description: "股票量化策略分析工具：为 vnpy 量化软件提供策略分析和下单前审核。支持智能马丁格尔策略(openclaw-martin)、多信号权重评分趋势策略（Multi\_Signal\_Treand）；大盘与板块和资金流向分析；做多做空选股；板块轮动调仓；vnpy量化系统全局配置答疑与修改；"
 ---
 
 # tiger-stock-strategy-analysis
@@ -134,6 +134,8 @@ web\_search 使用 Tavily 引擎，每月限额 1000 次，超出后 web\_search
 
 - **做多方向**：按照 [美股做多选择.md](docs/美股选股/美股做多选择.md) 中定义的选股逻辑，结合大盘环境，从候选股池中筛选符合「价值+成长混合（GARP）」策略的做多标的，输出评分卡和入场计划。
 - **做空方向**：按照 [美股做空选择.md](docs/美股选股/美股做空选择.md) 中定义的做空逻辑，结合大盘环境，在估值泡沫、基本面恶化或板块轮动过热的标的中筛选做空标的，输出评分卡和入场计划。
+- **候选池**：[选股操作手册.md](docs/美股选股/选股操作手册.md)（候选池**动态生成**规则：板块衍生 / 全网扫描 / 用户指定，由 00\_index Step 2 引用；**每次生成都必须执行 §七 池外探测**）
+- **选股池**：[美股选股池管理.md](docs/调仓/美股选股池管理.md)（固定池数据源 `scripts/stock_pool.json`，校验脚本 `scripts/sync_stock_pool.py`，补 T3 用 `scripts/refill_stock_pool_t3.py`；三层结构 + §6.4 池外探测；**只是种子兜底，不是视野边界**）
 
 详细执行流程见 [docs/美股选股/00\_index.md](docs/美股选股/00_index.md)。
 
@@ -141,6 +143,29 @@ web\_search 使用 Tavily 引擎，每月限额 1000 次，超出后 web\_search
 
 - 做多：`cta_report_get(report_kind="美股做多选股结果")`
 - 做空：`cta_report_get(report_kind="美股做空选股结果")`
+
+## 加密货币选币模块
+
+本技能支持对**加密货币市场**进行做多/做空选币分析，根据用户指定的 `direction` 参数自动路由：
+
+- **做多方向**：按照 [加密货币做多选择.md](docs/加密货币选择/加密货币做多选择.md) 中定义的逻辑（叙事成长型：代币经济学 + 协议基本面 + 资金面），结合大盘环境预测下一个轮入板块，从选币池中筛选做多标的，输出评分卡和入场计划。
+- **做空方向**：按照 [加密货币做空选择.md](docs/加密货币选择/加密货币做空选择.md) 中定义的逻辑（板块过热/叙事衰竭 + **解锁抛压** + 资金费率与杠杆），筛选做空标的；**必须通过轧空风险评估与做空成本核算两道闸**。
+- **选币池**：[选币操作手册.md](docs/加密货币选择/选币操作手册.md)（数据源 `scripts/crypto_pool.json`，校验脚本 `scripts/sync_crypto_pool.py`）
+
+详细执行流程见 [docs/加密货币选择/00\_index.md](docs/加密货币选择/00_index.md)。
+
+报告读取方式：选币结果由量化系统自动保存为分析报告，通过 vnpy\_mcp `cta_report_get` 获取：
+
+- 做多：`cta_report_get(report_kind="加密货币做多选股结果")`
+- 做空：`cta_report_get(report_kind="加密货币做空选股结果")`
+
+> ⚠️ **可交易性**：候选标的必须与 `get_all_contracts`（BINANCE_LINEAR）求交集，`vt_symbol` 以系统返回值为准，不得使用池中缓存值（币安存在 `1000PEPE` 类符号变体）。
+
+## 美股板块轮动调仓
+
+本技能支持对**美股持仓**进行机构级板块轮动调仓（宏观定调 → 板块排序 → 子板块排序 → 持仓映射 → 调仓执行 → 仓位风控 → 拆单优化）。
+
+详细说明见 [docs/调仓/美股板块轮动调仓.md](docs/调仓/美股板块轮动调仓.md)（第七层含 AI 调仓指令模板，消费固定池 `scripts/stock_pool.json`；池子本身的新增/删除/池外探测见 [美股选股池管理.md](docs/调仓/美股选股池管理.md)）。
 
 ## vnpy整体持仓分析与风控
 
@@ -232,6 +257,7 @@ tiger-stock-strategy-analysis目录下应该有本SKILL.md，docs目录，script
 | `tools.py`                     | （纯标准库，无需安装）                                         | JSON 文件读取工具函数                                  |
 | `update_vt_symbol.py`          | （纯标准库，无需安装）                                         | 管理 vt\_symbol\_info.json：新增/修改/删除/查询品种记录（原子写入） |
 | `sync_stock_pool.py`           | （纯标准库，无需安装）                                         | 校验美股选股池数据（stock\_pool.json 结构与统计）           |
+| `refill_stock_pool_t3.py`      | （pandas / lxml 已随 `get_market_data.py` 安装）                       | 补美股选股池 T3（潜力小盘）：S&P600/400 成分 → 子板块映射 → 取数验证（支持 dry-run / --apply / --only / --per） |
 
 ***
 
