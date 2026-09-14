@@ -241,9 +241,15 @@ web\_search 使用 Tavily 引擎，每月限额 1000 次，超出后 web\_search
 地址：
 <https://github.com/tiger3927/skill-tiger-stock-strategy-analysis.git>
 
-git克隆到到工作区目录下的skills目录下，克隆的目录改名，本技能目录必须为：tiger-stock-strategy-analysis
+git 克隆到**所用智能体系统的技能目录**（各系统约定不同，见下表），克隆的目录改名，本技能目录必须为：tiger-stock-strategy-analysis
 
-tiger-stock-strategy-analysis目录下应该有本SKILL.md，docs目录，scripts目录
+| 智能体系统 | 技能目录位置 |
+|---------|---------|
+| WorkBuddy | 项目级：`<项目根>/.workbuddy/skills/` |
+| openclaw / codex | `<工作区目录>/skills/` |
+| 其他智能体系统 | 按其技能目录约定（通常为 `skills/` 或 `~/.<系统名>/skills/`） |
+
+tiger-stock-strategy-analysis 目录下应该有本 SKILL.md，docs 目录，scripts 目录（放在哪个系统下都须如此）
 
 ### scripts 目录依赖
 

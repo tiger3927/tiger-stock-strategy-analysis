@@ -317,7 +317,10 @@ python scripts/sync_crypto_pool.py
 ## 九、安装
 
 - 地址：<https://github.com/tiger3927/skill-tiger-stock-strategy-analysis.git>
-- git 克隆到工作区目录下的 `skills` 目录，克隆的目录改名，本技能目录必须为：`tiger-stock-strategy-analysis`
+- git 克隆到**所用智能体系统的技能目录**（各系统约定不同），克隆的目录改名，本技能目录必须为：`tiger-stock-strategy-analysis`
+  - WorkBuddy：项目级 `<项目根>/.workbuddy/skills/`
+  - openclaw / codex：`<工作区目录>/skills/`
+  - 其他智能体系统：按其技能目录约定（通常为 `skills/` 或 `~/.<系统名>/skills/`）
 - 该目录下应有 `SKILL.md`、`docs` 目录、`scripts` 目录
 
 ### scripts 目录依赖
