@@ -153,19 +153,19 @@
 | `market_judgment` | string | 否 | 市场判断："上升趋势"/"下跌趋势"/"震荡"/"不确定" |
 | `parameters` | dict | 是 | 本轮建议的参数配置，仅填需要修改的字段 |
 
-### `parameters` 中可填的参数（仅 AI 可控参数，键名用 02 的标准名）
+### `parameters` 中可填的参数（仅 AI 可控参数，键名用 02 的标准名，即中文 name_cn）
 
-| 类别 | 可填参数 |
+| 类别 | 可填参数（中文标准名） |
 |:--|:--|
-| 方向 | `base_direction`（1=多 / -1=空 / 0=观望） |
-| 止盈止损开关 | `enable_stop_profit`, `enable_stop_loss`, `enable_atr_stop_loss`, `enable_atr_stop_profit`, `enable_stop_autoprofit` |
-| 止盈止损数值 | `stop_profit_radio`, `stop_loss_radio`, `stop_autoprofit_start_radio`, `stop_autoprofit_back_maxvalue`, `atr_loss_period`, `atr_loss_multiple` |
-| 网格开关 | `enable_martin_add_open`, `enable_martin_add_loss`, `enable_martin_add_profit`, `enable_martin_sub_base`, `enable_martin_sub` |
-| 网格数值 | `martin_grid_distance`, `martin_add_count`, `martin_grid_profit`, `martin_sub_base_part` |
-| 仓位数值 | `first_part` |
-| 价格保护开关 | `enable_first_allow_prices`, `enable_allow_price_high` |
+| 方向 | `操作方向`（1=多 / -1=空 / 0=观望） |
+| 止盈止损开关 | `是否允许止盈`, `是否允许止损`, `是否允许ATR动态止损`, `是否允许ATR动态止盈`, `是否允许移动止盈` |
+| 止盈止损数值 | `止盈幅度`, `止损幅度`, `移动止盈启动幅度`, `移动止盈回撤幅度`, `止盈止损用ATR周期`, `止盈止损用ATR倍数` |
+| 网格开关 | `是否允许网格主动开仓`, `是否允许亏损时网格加仓`, `是否允许盈利时网格加仓`, `是否允许卖出基础底仓`, `是否允许网格减仓` |
+| 网格数值 | `网格间距`, `网格数量`, `网格止盈`, `基础底仓分批出货比例` |
+| 仓位数值 | `建议首仓占比` |
+| 价格保护开关 | `是否限制首仓价格区间`, `是否禁止追高` |
 
-> 价格数值（`first_allow_price_min/max`、`allow_price_high`）由 AI/MCP 设置（AI 当轮分析推导，见第二节）；ATR 数值（`atr_loss_period/multiple`）可由 AI 输出（落地范围 5-120 / 1-50，不输出则随复位回 14/12）；`trend_direction` 仅作记录，不驱动动作。
+> 价格数值（`首仓最低价` / `首仓最高价` / `禁止追高价格红线`）由 AI/MCP 设置（AI 当轮分析推导，见第二节）；ATR 数值（`止盈止损用ATR周期` / `止盈止损用ATR倍数`）可由 AI 输出（落地范围 5-120 / 1-50，不输出则随复位回 14/12）；`趋势方向` 仅作记录，不驱动动作。
 
 ---
 

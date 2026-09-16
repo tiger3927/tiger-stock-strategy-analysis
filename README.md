@@ -33,7 +33,7 @@ tiger-stock-strategy-analysis/
 │   ├── vnpy整体持仓分析与风控/   # 持仓分析与风控
 │   ├── Martingale-Grid-Trading-Strategy/  # 马丁格尔网格策略
 │   ├── Tiger-Grid-Template/   # CTA 策略基类模板
-│   ├── 调仓/                   # 美股板块轮动调仓、选股池管理
+│   ├── 调仓/                   # 板块轮动调仓（调仓功能索引.md + 美股/ + 加密货币/）
 │   ├── Multi_Signal_Treand_Strategy.md
 │   └── vnpy_mcp.md            # vnpy_mcp 工具集使用指南
 ├── scripts/                  # 数据获取与工具脚本
@@ -104,8 +104,8 @@ tiger-stock-strategy-analysis/
 
 | 文档 | 用途 |
 |------|------|
-| [美股板块轮动调仓.md](docs/调仓/美股板块轮动调仓.md) | 机构级板块轮动调仓方法论（先卖弱再买强、分批执行、资金闭环） |
-| [美股选股池管理.md](docs/调仓/美股选股池管理.md) | 选股池的构建、维护和使用规则 |
+| [美股板块轮动调仓（00_index.md）](docs/调仓/美股/00_index.md) | 机构级板块轮动调仓方法论文档组（13 篇：索引/七层/资金分配/AI 模板；先卖弱再买强、分批执行、资金闭环） |
+| [美股选股池管理.md](docs/调仓/美股/美股选股池管理.md) | 选股池的构建、维护和使用规则 |
 
 ---
 
