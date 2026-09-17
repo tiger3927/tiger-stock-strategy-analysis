@@ -65,11 +65,13 @@ import datetime
 import json
 import math
 import os
+import re
+import subprocess
 import sys
 import traceback
 from typing import NoReturn
 
-VERSION = "2.5.0"
+VERSION = "2.6.0"
 DOCS_REF = "06_策略资金分配.md §7.3.1 / 02 §4 / 04 §6 / 05 §7.3.3 / 07 §8 / 08 §9 / 09 §10 / 10 §11.2"
 
 PARAM_DEFAULTS = {
@@ -339,7 +341,8 @@ LAYERS = ("S1 强烈加仓", "S2 适度加仓", "S3 维持", "S4 观察减仓", 
 TOP_LEVEL_KEYS = ("market", "report_name", "analysis_time", "操作模式", "任务参数",
                   "分析摘要", "持仓映射", "资金现状", "目标分配", "调仓指令", "新增策略",
                   "资金汇总", "风控校验", "数据缺失与冲突", "待人工确认", "失效代码", "执行建议")
-SUBCOMMANDS = ("fund", "gap", "verify", "score", "map", "exec", "cycle", "score2", "assemble", "leaders")
+SUBCOMMANDS = ("fund", "gap", "verify", "score", "map", "exec", "cycle", "score2", "assemble", "leaders",
+               "gate", "run")
 
 # 中文任务参数键 → 报告模板英文键（10 §11.1 任务参数）
 EN_PARAMS = {v: k for k, v in PARAM_CN.items()}
@@ -806,6 +809,21 @@ def run_fund(argv):
 
     # 参数自检（自动调参 + 留痕）
     violations, adjustments, ok_adjust = adjust_params(p, B, mk)
+
+    # micro 分支（v2.6.0，06 §7.3.1.2 micro：探索版命题⑤吸收）——
+    # 加密货币 B<3000 USDT：max_new=1、单槽位；06 §7.3.1.2 板块目标 % 区间表（B≥20,000 设计）
+    # 声明不适用 → 按硬上限执行，无需 AI 逐轮人工裁决（2026-09-15/16/17 三轮实测同冲突重演）
+    micro = market == "加密货币" and B < 3000
+    micro_decl = None
+    if micro:
+        if p["max_new"] > 1:
+            adjustments.append("micro 分支（加密货币 B=%s < 3000）：max_new %s → 1、单槽位"
+                               "（06 §7.3.1.2 micro，v2.6.0）" % (g(B), p["max_new"]))
+            p["max_new"] = 1
+        micro_decl = ("micro 账户（B<3000 USDT）：max_new=1、单槽位；06 §7.3.1.2 板块目标 %% 区间表"
+                      "（按 B≥20,000 USDT 设计）声明不适用，按硬上限执行（单板块≤%s%%、单币≤%s%%）"
+                      % (p["max_sector_pct"], p["max_single_pct"]))
+
     param_check = {
         "通过": not violations,
         "违规项": violations,
@@ -858,7 +876,30 @@ def run_fund(argv):
         "策略槽位": slots,
         "资金闭环自检": checks,
         "全部通过": all_passed,
+        "micro": {"启用": micro, "声明": micro_decl},
     }
+    # params.json（v2.6.0 参数一次解析贯穿，探索版命题④吸收）：
+    # fund 参数自检/调整后的最终参数一次落盘，gap/verify 传 --params 自动继承，
+    # 消灭"fund 调参不传 gap"断裂（2026-09-16/17 实测：base_capital 1000→100 未传 gap）
+    if _OUT_FILE:
+        params_path = os.path.join(os.path.dirname(os.path.abspath(_OUT_FILE)), "params.json")
+        params_doc = {
+            "版本": VERSION, "生成": "rebalance_tools fund",
+            "invest_mult": p["invest_mult"], "mode": p["mode"],
+            "max_delta_pct": p["max_delta_pct"], "max_new": p["max_new"],
+            "max_single_pct": p["max_single_pct"], "max_sector_pct": p["max_sector_pct"],
+            "base_capital": p["base_capital"], "max_strategies": p["max_strategies"],
+            "micro": micro,
+            "balance": g(args.balance), "available": g(args.available), "B": g(B),
+            "说明": "fund 参数自检后的一次解析产物（v2.6.0 参数一次解析贯穿，06 §7.3.1.2）；"
+                   "下游 gap/verify 传 --params 本文件自动继承；显式命令行参数优先，冲突须留痕",
+        }
+        try:
+            with open(params_path, "w", encoding="utf-8") as f:
+                json.dump(params_doc, f, ensure_ascii=False, indent=2)
+            result["params 文件"] = params_path
+        except OSError as e:
+            result["params 文件错误"] = str(e)
     emit(result)
 
 
@@ -878,20 +919,28 @@ def run_gap(argv):
             '[{"策略名称":"MARTIN-AMD","板块":"信息技术","板块分层":"强势",\n'
             '  "当前市值":5000,"目标资金":10000}]\n'
             "板块分层 ∈ 强势/中性/弱势（score 输出或 AI 判断）；当前市值/目标资金 单位 = 账户币种；\n"
-            "目标资金 = 落地口径（＝目标持仓 × 现价；见 加密货币/06 §7.3.1.2「两口径落位表」）；\n"
+            "目标资金 = 落地口径（＝目标持仓 × 现价）；可选 槽位资金 = 决策口径（qty-first，v2.6.0，\n"
+            "加密货币/06 §7.3.1.2）——给出时最小开仓门槛按 槽位资金 判；\n"
             "本轮拟开新仓只放 ≤ max_new 个、并按板块优先级排列 —— max_new 名额按 |缺口| 降序占用，\n"
             "混入非优先候选会被其更大的缺口挤占（2026-09-15 验收复盘，06 §7.3.1.6）"))
     add_market_arg(ap)
     ap.add_argument("--snapshot", required=True, help="持仓快照 JSON 数组（格式见 epilog）")
-    ap.add_argument("--balance", type=float, required=True, help="账户权益 balance（USD/USDT）")
-    ap.add_argument("--available", type=float, required=True, help="可用现金 available（同币种）")
+    ap.add_argument("--params", default=None,
+                    help="fund 产出的 params.json（v2.6.0 参数一次解析贯穿）：balance/available/"
+                         "invest_mult/max_delta_pct/max_new/base_capital 未显式给出时继承；"
+                         "显式命令行参数优先，冲突留痕")
+    ap.add_argument("--balance", type=float, default=None,
+                    help="账户权益 balance（USD/USDT）；缺省 → 继承 params.json")
+    ap.add_argument("--available", type=float, default=None,
+                    help="可用现金 available（同币种）；缺省 → 继承 params.json")
     ap.add_argument("--invest-mult", type=float, default=None,
-                    help="缺省 = 市场预设（美股 2 / 加密货币 1）")
+                    help="缺省 = params.json → 市场预设（美股 2 / 加密货币 1）")
     ap.add_argument("--max-delta-pct", type=float, default=None,
-                    help="缺省 = 市场预设（美股 10 / 加密货币 20）")
-    ap.add_argument("--max-new", type=int, default=PARAM_DEFAULTS["max_new"])
+                    help="缺省 = params.json → 市场预设（美股 10 / 加密货币 20）")
+    ap.add_argument("--max-new", type=int, default=None,
+                    help="缺省 = params.json → 市场默认（v2.6.0：不再固定 PARAM_DEFAULTS）")
     ap.add_argument("--base-capital", type=float, default=None,
-                    help="缺省 = 市场预设（美股 10000 / 加密货币 1000）")
+                    help="缺省 = params.json → 市场预设（美股 10000 / 加密货币 1000）")
     ap.add_argument("--open-priority", default="amount", choices=("amount", "order"),
                     help="「新仓名额」的占用顺序：amount = 按 |缺口| 降序（缺省，与旧版逐字一致）；"
                          "order = 按快照顺序（= 板块优先级，币版推荐：06 §7.3.1.6 —— 否则落地金额更大的"
@@ -899,15 +948,46 @@ def run_gap(argv):
     a = parsed(ap, argv, "gap")
     mk = MARKET_PRESETS[resolve_market(a.market)]
 
-    if a.balance <= 0:
-        fail("balance 必须 > 0")
+    # v2.6.0 参数一次解析贯穿：显式命令行 > params.json > 市场预设（冲突留痕）
+    pj, conflicts, psrc = None, [], {}
+    if a.params:
+        pj, perr = load_json_file(a.params, "params")
+        if perr or not isinstance(pj, dict):
+            fail("params 不可读: %s" % perr)
+
+    def _rp(cli_v, key, default):
+        if cli_v is not None:
+            if pj is not None and pj.get(key) is not None:
+                try:
+                    if abs(float(pj[key]) - float(cli_v)) > 1e-9:
+                        conflicts.append("%s: 命令行 %s ≠ params.json %s（以命令行为准，留痕）"
+                                         % (key, cli_v, pj[key]))
+                except (TypeError, ValueError):
+                    pass
+            psrc[key] = "命令行"
+            return cli_v
+        if pj is not None and pj.get(key) is not None:
+            psrc[key] = "params.json"
+            return pj[key]
+        psrc[key] = "市场预设/默认"
+        return default
+
+    if a.balance is None and pj is not None:
+        a.balance = num(pj.get("balance"))
+    if a.available is None and pj is not None:
+        a.available = num(pj.get("available"))
+    if a.balance is None or a.balance <= 0:
+        fail("缺 --balance（且 params.json 未提供 balance）")
+    if a.available is None or a.available < 0:
+        fail("缺 --available（且 params.json 未提供 available）")
+    a.invest_mult = _rp(a.invest_mult, "invest_mult", mk["defaults"]["invest_mult"])
+    a.max_delta_pct = _rp(a.max_delta_pct, "max_delta_pct", mk["defaults"]["max_delta_pct"])
+    a.max_new = int(_rp(a.max_new, "max_new", PARAM_DEFAULTS["max_new"]))
+    a.base_capital = _rp(a.base_capital, "base_capital", mk["defaults"]["base_capital"])
+
     data, err = load_json_file(a.snapshot, "快照")
     if err or not isinstance(data, list):
         fail("快照须为 JSON 数组: %s" % err)
-
-    a.invest_mult = a.invest_mult if a.invest_mult is not None else mk["defaults"]["invest_mult"]
-    a.max_delta_pct = a.max_delta_pct if a.max_delta_pct is not None else mk["defaults"]["max_delta_pct"]
-    a.base_capital = a.base_capital if a.base_capital is not None else mk["defaults"]["base_capital"]
 
     B = a.balance * a.invest_mult
     no_move = mk["no_move_pct"]
@@ -921,9 +1001,10 @@ def run_gap(argv):
             continue
         name = s.get("策略名称") or s.get("ticker") or ("第%d条" % (i + 1))
         cur, tgt = num(s.get("当前市值")), num(s.get("目标资金"))
+        slot = num(s.get("槽位资金"))
         if cur is None or tgt is None:
             bad.append("%s: 当前市值/目标资金 缺失或非数值（期望字段: 策略名称/当前市值/目标资金, "
-                       "板块/板块分层 可选且 板块分层 ∈ 强势/中性/弱势）" % name)
+                       "板块/板块分层 可选且 板块分层 ∈ 强势/中性/弱势；槽位资金 可选=决策口径）" % name)
             continue
         gap = tgt - cur
         if abs(gap) < threshold:
@@ -938,7 +1019,7 @@ def run_gap(argv):
             bad.append("%s: 板块分层=%r 非法（须 ∈ 强势/中性/弱势，或留空），已按缺失处理"
                        % (name, s.get("板块分层")))
         rows.append({"策略名称": name, "板块": s.get("板块", ""), "板块分层": tier,
-                     "当前市值": cur, "目标资金": tgt, "缺口": gap,
+                     "当前市值": cur, "目标资金": tgt, "槽位资金": slot, "缺口": gap,
                      "缺口占B": abs(gap) / B * 100.0, "动作": act, "被截断": False, "截断原因": ""})
     if not rows:
         fail("快照无可计算条目", 明细=bad)
@@ -976,9 +1057,12 @@ def run_gap(argv):
             anomalies.append("%s: 弱势板块出现正缺口（%s）——请核对目标分配" % (r["策略名称"], r["动作"]))
         if r["动作"] in ("减仓", "清仓") and r["板块分层"] == "强势":
             anomalies.append("%s: 强势板块出现负缺口（%s）——请核对目标分配" % (r["策略名称"], r["动作"]))
-        if r["动作"] in ("加仓", "开仓") and r["目标资金"] < a.base_capital - 1e-9:
-            anomalies.append("%s: 目标资金 %s < 基准资金 %s（最小开仓门槛，应并入同板块其他票）"
-                             % (r["策略名称"], g(r["目标资金"]), g(a.base_capital)))
+        gate_v = r["槽位资金"] if r.get("槽位资金") is not None else r["目标资金"]
+        gate_k = "槽位资金" if r.get("槽位资金") is not None else "目标资金"
+        if r["动作"] in ("加仓", "开仓") and gate_v < a.base_capital - 1e-9:
+            anomalies.append("%s: %s %s < 基准资金 %s（最小开仓门槛，应并入同板块其他票；"
+                             "qty-first 决策口径=槽位资金，v2.6.0）"
+                             % (r["策略名称"], gate_k, g(gate_v), g(a.base_capital)))
 
     # 资金匹配（06 §7.3.1.5 第 3/4 条落地：按截断后的最终「动作」计，维持/截断票不计入）
     sell_free = sum((r["当前市值"] - r["目标资金"]) for r in rows if r["动作"] in ("减仓", "清仓"))
@@ -1005,7 +1089,8 @@ def run_gap(argv):
         "总预算B": g(B),
         "参数": {"invest_mult": a.invest_mult, "max_delta_pct": a.max_delta_pct,
                  "max_new": a.max_new, "base_capital": a.base_capital,
-                 "新仓名额顺序": a.open_priority},
+                 "新仓名额顺序": a.open_priority,
+                 "参数来源": psrc, "参数冲突留痕": conflicts},
         threshold_label: g(threshold),
         "本轮幅度": g(total_abs / B * 100.0),
         "幅度上限": a.max_delta_pct,
@@ -1033,6 +1118,8 @@ def run_gap(argv):
     for r in rows:
         for k in ("当前市值", "目标资金", "缺口", "缺口占B"):
             r[k] = g(r[k])
+        if r.get("槽位资金") is not None:
+            r["槽位资金"] = g(r["槽位资金"])
     emit(result)
 
 
@@ -1051,6 +1138,9 @@ def run_verify(argv):
                     help="独立交叉核对：最新 get_accounts.balance（账户币种）；省略 → 按报告自报值校验")
     ap.add_argument("--available", type=float, default=None,
                     help="独立交叉核对：最新 get_accounts.available（同币种）")
+    ap.add_argument("--params", default=None,
+                    help="fund 产出的 params.json（v2.6.0 参数一次解析贯穿）：--balance/--available "
+                         "省略时继承其中快照值；显式命令行参数优先")
     ap.add_argument("--pool", default=None,
                     help="选股池（T3/高弹性约束用）；缺省 = 市场默认池")
     add_market_arg(ap)
@@ -1059,6 +1149,15 @@ def run_verify(argv):
     mk = MARKET_PRESETS[market]
     ccy = mk["currency"]
     a.pool = a.pool or default_pool_path(market)
+    if a.params:
+        pj, perr = load_json_file(a.params, "params")
+        if perr or not isinstance(pj, dict):
+            emit({"成功": True, "工具": "rebalance_tools verify (v" + VERSION + ")", "版本": VERSION,
+                  "校验": "无法校验", "原因": "params 不可读: %s" % perr, "明细": []}, code=2)
+        if a.balance is None:
+            a.balance = num(pj.get("balance"))
+        if a.available is None:
+            a.available = num(pj.get("available"))
 
     report, err = load_json_file(a.report, "报告")
     if err or not isinstance(report, dict):
@@ -1198,12 +1297,20 @@ def run_verify(argv):
             # 若只认「目标资金」，按模板照抄的报告会退回落地的 tpct×B 作门槛/缓冲基准，
             # 复算出假「不通过」（2026-09-15 验收复盘：93.29 < 99 触发最小开仓门槛）。
             decl_money = None
+            slot_money = None
             if src == "指令":
-                for _k in ("目标资金", "目标资金（决策口径）", "目标资金（决策口径，可选）"):
-                    _v = num(it.get(_k))
-                    if _v is not None:
-                        decl_money = _v
-                        break
+                # v2.6.0 qty-first（06 §7.3.1.2）：指令含「槽位资金」→ 目标资金=落地口径，
+                # 门槛/缓冲按 槽位资金（决策口径）判；无该字段 → v2.5.0 兼容口径
+                # （目标资金=决策口径）。两种口径自动识别，历史报告仍可 verify。
+                slot_money = num(it.get("槽位资金"))
+                if slot_money is not None:
+                    decl_money = slot_money
+                else:
+                    for _k in ("目标资金", "目标资金（决策口径）", "目标资金（决策口径，可选）"):
+                        _v = num(it.get(_k))
+                        if _v is not None:
+                            decl_money = _v
+                            break
             gate_money = decl_money if decl_money is not None else target_money
             if tpct > 0 and B:
                 sector_sum[it.get("板块")] = sector_sum.get(it.get("板块"), 0.0) + tpct
@@ -1221,14 +1328,17 @@ def run_verify(argv):
                 if init is None:
                     buffer_bad.append("%s: %s 缺 初始资金（06 §7.3.1.4 所有策略必写）" % (nm, act))
                 elif gate_money is not None and init < gate_money * BUFFER - EPS_MONEY:
-                    buffer_bad.append("%s: 初始资金 %s < 目标资金 %s×1.2=%s"
-                                     % (nm, g(init), g(gate_money), g(gate_money * BUFFER)))
+                    _gk = "槽位资金" if slot_money is not None else "目标资金"
+                    buffer_bad.append("%s: 初始资金 %s < %s %s×1.2=%s"
+                                     % (nm, g(init), _gk, g(gate_money), g(gate_money * BUFFER)))
             if gate_money is not None and gate_money > 0 and gate_money < base_capital - EPS_MONEY:
-                floor_bad.append("%s: 目标资金 %s < 基准资金 %s（最小开仓门槛）%s"
-                                 % (nm, g(gate_money), g(base_capital),
+                _gk = "槽位资金" if slot_money is not None else "目标资金"
+                floor_bad.append("%s: %s %s < 基准资金 %s（最小开仓门槛）%s"
+                                 % (nm, _gk, g(gate_money), g(base_capital),
                                     "" if decl_money is not None else
                                     "；当前按「整股取整后金额」判定，若系取整所致，请补写指令字段"
-                                    " 目标资金（决策口径，未取整）（06 §7.3.1.2 取整损失条款）"))
+                                    " 槽位资金（决策口径，v2.6.0 qty-first）或 目标资金（决策口径，未取整）"
+                                    "（06 §7.3.1.2 取整损失条款）"))
             if B and target_money is not None and target_money > max_single / 100.0 * B + EPS_MONEY:
                 single_bad.append("%s: 目标 %s%% > 单票上限 %s%%" % (nm, g(tpct), g(max_single)))
             batches = it.get("分批计划") or []
@@ -1267,6 +1377,10 @@ def run_verify(argv):
         "OK" if not batch_bad else "; ".join(batch_bad))
     add("调仓相关参数纯净（仅数值/布尔/枚举）", "通过" if not purity_bad else "不通过",
         "OK" if not purity_bad else "; ".join(purity_bad))
+    qty_first = any(isinstance(it, dict) and num(it.get("槽位资金")) is not None for it in instrs)
+    add("指令口径（v2.6.0 qty-first）", "通过",
+        ("槽位资金=决策口径（门槛/缓冲基准），目标资金=落地口径（06 §7.3.1.2 v2.6.0）" if qty_first
+         else "v2.5.0 兼容口径（无 槽位资金 字段：目标资金=决策口径）"))
 
     # ---------- 板块/子板块汇总（分母 = B） ----------
     if B:
@@ -1565,12 +1679,19 @@ def run_score(argv):
                     help="收盘价序列 JSON：基准键（美股 SPY / 加密货币 BTC）必填，其余键 = 板块（美股 ETF / 加密货币板块名）")
     ap.add_argument("--cycle", default=None, choices=list(CYCLES) + list(CRYPTO_CYCLES),
                     help="周期阶段（美股: 01 §3.3 经济周期 / 加密货币: 01 §3.3 轮动阶段）；省略 → 只算动量（权重归一化）")
+    ap.add_argument("--gate", default=None,
+                    help="gate.json（v2.6.0 机判产物）：--cycle 省略时继承 gate.phase（判定可复算贯穿）")
     ap.add_argument("--top-strong", type=int, default=4, help="强势板块数量（02 §4.3: Top 3-4）")
     ap.add_argument("--bottom3-history", default=None,
                     help="历史 Bottom3 JSON 数组（旧→新）：[\"XLE\",\"XLI\"], ... 用于连弱判定")
     a = parsed(ap, argv, "score")
     market = resolve_market(a.market)
     mk = MARKET_PRESETS[market]
+    if a.cycle is None and a.gate:
+        gd, gerr = load_json_file(a.gate, "gate 输出")
+        if gerr or not isinstance(gd, dict) or not gd.get("phase"):
+            fail("gate 输出不可读或缺 phase: %s" % gerr)
+        a.cycle = str(gd["phase"])   # v2.6.0：cycle 继承 gate 机判（判定可复算贯穿）
     if a.cycle and a.cycle not in mk["cycles"]:
         fail("周期阶段 %s 与 市场=%s 不匹配（允许: %s）" % (a.cycle, market, "/".join(mk["cycles"])))
     benchmark = mk["benchmark"]
@@ -1732,11 +1853,18 @@ def run_score2(argv):
                     help="score 子命令输出 JSON（取各板块 评分/分层；省略 → 最终得分=独立得分）")
     ap.add_argument("--cycle", default=None, choices=list(CYCLES) + list(CRYPTO_CYCLES),
                     help="周期阶段（周期因子，继承板块）")
+    ap.add_argument("--gate", default=None,
+                    help="gate.json（v2.6.0 机判产物）：--cycle 省略时继承 gate.phase（判定可复算贯穿）")
     ap.add_argument("--top-strong", type=int, default=7, help="强势子板块数（03 §5.4 Top 6-8）")
     ap.add_argument("--bottom-weak", type=int, default=6, help="弱势子板块数（03 §5.4 Bottom 5-7）")
     a = parsed(ap, argv, "score2")
     market = resolve_market(a.market)
     mk = MARKET_PRESETS[market]
+    if a.cycle is None and a.gate:
+        gd, gerr = load_json_file(a.gate, "gate 输出")
+        if gerr or not isinstance(gd, dict) or not gd.get("phase"):
+            fail("gate 输出不可读或缺 phase: %s" % gerr)
+        a.cycle = str(gd["phase"])   # v2.6.0：cycle 继承 gate 机判（判定可复算贯穿）
     if a.cycle and a.cycle not in mk["cycles"]:
         fail("周期阶段 %s 与 市场=%s 不匹配（允许: %s）" % (a.cycle, market, "/".join(mk["cycles"])))
     benchmark = mk["benchmark"]
@@ -2373,11 +2501,25 @@ def run_assemble(argv):
                     help="操作模式（01 §3.4 大盘总开关；省略 → 正常 + 待人工确认）")
     ap.add_argument("--cycle-stage", default=None, choices=list(CYCLES) + list(CRYPTO_CYCLES),
                     help="周期阶段（美股: 01 §3.3 经济周期 / 加密货币: 01 §3.3 轮动阶段）")
+    ap.add_argument("--gate", default=None,
+                    help="gate.json（v2.6.0 机判产物）：--mode/--cycle-stage 省略时继承机判结果并写入待人工确认")
     ap.add_argument("--out", default=None, help="结果另存文件（stdout 仍输出完整 JSON）")
     add_market_arg(ap)
     a = parsed(ap, argv, "assemble")
     market = resolve_market(a.market)
     mk = MARKET_PRESETS[market]
+    gate_note = None
+    if a.gate:
+        gd, gerr = load_json_file(a.gate, "gate 输出")
+        if gerr or not isinstance(gd, dict):
+            fail("gate 输出不可读: %s" % gerr)
+        if a.mode is None and gd.get("mode"):
+            a.mode = str(gd["mode"])
+            gate_note = "操作模式继承 gate 机判（%s，v2.6.0 --gate）" % gd.get("mode")
+        if a.cycle_stage is None and gd.get("phase"):
+            a.cycle_stage = str(gd["phase"])
+            gate_note = ((gate_note + "；") if gate_note else "") + \
+                "周期阶段继承 gate 机判（%s，v2.6.0 --gate）" % gd.get("phase")
     if a.cycle_stage and a.cycle_stage not in mk["cycles"]:
         fail("周期阶段 %s 与 市场=%s 不匹配（允许: %s）" % (a.cycle_stage, market, "/".join(mk["cycles"])))
     ccy = mk["currency"]
@@ -2506,12 +2648,15 @@ def run_assemble(argv):
         ("" if a.cycle_stage else "（周期阶段未提供 --cycle-stage）"),
         "分析摘要.本轮净调仓金额 取 gap 净额（卖出释放−买入使用），口径请复核",
         "资金现状.策略资金(仅本次涉及策略) 由 AI 按 06 §7.3.1.1（cta_strategies_get_all）填写",
-        "调仓指令 由 AI 按 05/10 §11.2 填写（目标持仓/分批计划/资金调整/意图备注/调仓相关参数/调仓理由）",
+        "调仓指令 由 AI 按 05/10 §11.2 填写（目标持仓/分批计划/资金调整/意图备注/调仓相关参数/调仓理由）；"
+        "v2.6.0 qty-first：目标资金=落地口径（=目标持仓×现价），决策口径写 槽位资金 字段（06 §7.3.1.2）",
         "资金汇总: 策略初始资金合计/目标仓位总和/目标组合策略数/资金来源/保证金占用 由 AI 填写"
         "（初始资金 ≥ 目标资金×1.2，06 §7.3.1.4；数据源 = fund 策略槽位）",
         "落盘前必须运行 verify --report <本报告> --balance <最新> --available <最新>，"
         "按工具复算结论填写 风控校验 各项",
     ]
+    if gate_note:
+        pending.insert(0, gate_note)
     if not a.analysis_time:
         pending.append("analysis_time 未提供，AI 填写（带时区）")
     if adj:
@@ -2715,6 +2860,471 @@ def run_leaders(argv):
 
 
 # =====================================================================
+# gate — 模式与轮动阶段机判（加密货币/01 §3.1/§3.3 可复算阈值；v2.6.0 自探索版 gate 移植）
+# =====================================================================
+
+def _gate_closes_of(data, t):
+    v = data.get(t) if t else None
+    if not isinstance(v, dict):
+        return None
+    c = v.get("closes") if isinstance(v.get("closes"), dict) else v
+    out = {}
+    for k, x in c.items():
+        fv = num(x)
+        if fv and fv > 0:
+            out[str(k)] = fv
+    return out or None
+
+
+def _gate_ret(c, bc_dates, n):
+    """n 日收益（与基准日期对齐，禁跨时点混算）；可用根数不足 n+1 → None"""
+    ds = sorted(set(c) & set(bc_dates))
+    if len(ds) < n + 1:
+        return None
+    return (c[ds[-1]] / c[ds[-n - 1]] - 1) * 100.0
+
+
+def _gate_cond(ok, value, threshold, as_of, source):
+    """单条判定证据；ok ∈ {True, False, None(=unknown，不计入满足条数)}"""
+    return {"判定": (True if ok else False) if ok is not None else None,
+            "值": value, "阈值": threshold, "as_of": as_of, "来源": source}
+
+
+def run_gate(argv):
+    ap = argparse.ArgumentParser(
+        prog="rebalance_tools gate",
+        description="模式与轮动阶段机判（加密货币/01 §3.1 三档 + §3.3 轮动阶段 的可复算实现，v2.6.0）；"
+                    "每条输出 值/阈值/判定/as_of/来源；数据缺失 → unknown 不计入满足条数并显式记录；"
+                    "三档并列取保守（收缩>中性偏弱>正常），阶段并列取更晚（晚期>中期>早期）",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="输出 gate.json：tier/mode/sell_only/phase + 逐条证据 + parallel + notes + params；"
+               "下游 score/score2（--gate 继承 phase）与 assemble（--gate 继承 mode/phase）使用；"
+               "报告 风控校验.大盘状态确认 引用 gate.json 逐条证据（判定可复算，verify/audit 对账）")
+    add_market_arg(ap)
+    ap.add_argument("--prices", required=True,
+                    help="K线原始产物 crypto_prices_raw.json（每币 {closes:{date:close}}；基准键必填）")
+    ap.add_argument("--live", default=None,
+                    help="live_prices.json {ticker: 现价}（现价 vs MA 用；缺省 → 用末根收盘并在 notes 留痕）")
+    ap.add_argument("--market-report", default=None,
+                    help="market_report.json（BTC.D 3月趋势 / 稳定币扩张 / DeFi TVL；缺省 → 相关条件 unknown）")
+    ap.add_argument("--pool", default=None, help="选币池；缺省 = 市场默认池（crypto_pool.json）")
+    ap.add_argument("--liquidation-usd", type=float, default=None,
+                    help="24h 全市场爆仓 USD（仅显式提供才参与 收缩档条件②）")
+    ap.add_argument("--funding-high", action="store_true",
+                    help="全市场费率高企（仅显式提供才参与 晚期条件④）")
+    ap.add_argument("--mode-override", default=None, choices=("积极",),
+                    help="机判表不产出 积极；显式覆盖为 积极 时必须同时给 --override-reason")
+    ap.add_argument("--override-reason", default=None,
+                    help="覆盖理由（--mode-override 时必填，写入输出 override 字段留痕）")
+    a = parsed(ap, argv, "gate")
+    market = resolve_market(a.market)
+    if market != "加密货币":
+        fail("gate 仅支持 --market 加密货币（操作化阈值按 加密货币/01 §3.1/§3.3 实现；美股组沿用 AI 手工判定）")
+    mk = MARKET_PRESETS[market]
+    benchmark = mk["benchmark"]
+
+    data, derr = load_json_file(a.prices, "K线原始产物")
+    if derr or not isinstance(data, dict):
+        fail("K线原始产物不可读: %s" % derr)
+    pool_path = a.pool or default_pool_path(market)
+    pool, perr = load_json_file(pool_path, "选币池")
+    if perr or not isinstance(pool, dict) or not (pool.get("categories") or {}):
+        fail("选币池不可读或无 categories: %s" % perr)
+    cats = pool["categories"]
+    coins_idx = pool.get("coins") or {}
+
+    notes = []
+
+    # ---- 基准 / 均线 / 现价（as_of 分离：现价只用于 vs MA，收益只用末根序列）----
+    bc = _gate_closes_of(data, benchmark)
+    if not bc:
+        fail("基准 %s 缺失" % benchmark)
+    bds = sorted(bc)
+    last_bar = bds[-1]
+    ma20_n = min(20, len(bds))
+    ma20 = sum(bc[d] for d in bds[-ma20_n:]) / ma20_n
+    ma50_n = min(50, len(bds))
+    ma50 = sum(bc[d] for d in bds[-ma50_n:]) / ma50_n
+    if ma50_n < 50:
+        notes.append("MA50 用 %d 根近似（K 线不足 50 根；近似口径显式记录，不静默）" % ma50_n)
+    live, live_asof = None, "K线末根收盘（未提供 --live）"
+    if a.live:
+        lv, lerr = load_json_file(a.live, "实时价")
+        if lerr or not isinstance(lv, dict):
+            notes.append("live_prices.json 不可读（%s），现价退回末根收盘" % lerr)
+        else:
+            live = num(lv.get(benchmark))
+            if live is None:
+                notes.append("live 无 %s 现价，退回末根收盘" % benchmark)
+            else:
+                live_asof = "live 快照（live_prices.json）"
+    px = live if live is not None else bc[last_bar]
+    kline_asof = "K线末根 %s" % last_bar
+
+    # ---- 收益 / 超额 / 板块龙头（T2 首位，与 leaders 同法）----
+    btc20 = _gate_ret(bc, set(bds), 20)
+
+    def excess20(t):
+        c = _gate_closes_of(data, t)
+        if not c:
+            return None
+        r = _gate_ret(c, set(bds), 20)
+        return None if (r is None or btc20 is None) else r - btc20
+
+    pool_rets = []
+    for t in set(list(coins_idx.keys()) + [k for k in data.keys() if k != benchmark]):
+        c = _gate_closes_of(data, t)
+        if not c:
+            continue
+        r = _gate_ret(c, set(bds), 20)
+        if r is not None:
+            pool_rets.append(r)
+    pool20 = sum(pool_rets) / len(pool_rets) if pool_rets else None
+
+    def leader_of(sec):
+        tiers = cats.get(sec) or {}
+        t2 = [x for x in (tiers.get("T2") or []) if x]
+        t3 = [x for x in (tiers.get("T3") or []) if x]
+        return (t2 or t3 or [None])[0]
+
+    c_eth = _gate_closes_of(data, "ETH")
+    eth20 = _gate_ret(c_eth, set(bds), 20) if c_eth else None
+    meme_l, l1_l, defi_l = leader_of("Meme"), leader_of("L1 公链"), leader_of("DeFi")
+    meme_ex = excess20(meme_l) if meme_l else None
+    meme7 = None
+    if meme_l:
+        c_m = _gate_closes_of(data, meme_l)
+        if c_m:
+            meme7 = _gate_ret(c_m, set(bds), 7)
+    l1_ex = excess20(l1_l) if l1_l else None
+    defi_ex = excess20(defi_l) if defi_l else None
+
+    ex60s, extop10s = [], []
+    for t, meta in coins_idx.items():
+        if not isinstance(meta, dict):
+            continue
+        b = meta.get("mcap_bucket")
+        e = excess20(t)
+        if e is None:
+            continue
+        if b == "60+":
+            ex60s.append(e)
+        elif b == "top10":
+            extop10s.append(e)
+    ex60_avg = sum(ex60s) / len(ex60s) if ex60s else None
+    extop10_avg = sum(extop10s) / len(extop10s) if extop10s else None
+
+    # ---- 大盘报告解析（BTC.D 3月 / 稳定币 / TVL；解析失败 → unknown，不编造）----
+    btcd_rising, btcd_delta, tvl_rising, stablecoin = None, None, None, None
+    mrep_asof = "未提供 --market-report"
+    if a.market_report:
+        mr, merr = load_json_file(a.market_report, "大盘报告")
+        if merr or not isinstance(mr, dict):
+            notes.append("大盘报告不可读（%s），BTC.D/稳定币/TVL 条件按 unknown" % merr)
+        else:
+            mrep_asof = str(mr.get("analysis_time") or "未知")
+            trend_txt = str(((mr.get("板块轮动") or {}).get("BTC_D") or {}).get("趋势") or "")
+            m3 = re.search(r"3m\s*([0-9.]+)\s*%?\s*→\s*([0-9.]+)", trend_txt)
+            if m3:
+                btcd_delta = float(m3.group(2)) - float(m3.group(1))
+                btcd_rising = btcd_delta > 0
+            elif ("上升" in trend_txt) or ("上行" in trend_txt):
+                btcd_rising = True
+                notes.append("BTC.D 3月趋势按关键词兜底（报告无 3m X→Y 数值对）")
+            elif ("下降" in trend_txt) or ("回落" in trend_txt):
+                btcd_rising = False
+                notes.append("BTC.D 3月趋势按关键词兜底（报告无 3m X→Y 数值对）")
+            sc_txt = str((mr.get("信用层") or {}).get("稳定币总市值") or "") + " " + str(mr.get("资金面") or "")
+            if ("扩张" in sc_txt) and ("收缩" not in sc_txt):
+                stablecoin = True
+            elif ("收缩" in sc_txt) and ("扩张" not in sc_txt):
+                stablecoin = False
+            else:
+                notes.append("稳定币扩张与否按报告文本关键词无法唯一判定（unknown，留痕）")
+            tvl_txt = str((mr.get("信用层") or {}).get("DeFi TVL") or "")
+            if ("上升" in tvl_txt) or ("+" in tvl_txt):
+                tvl_rising = True
+            elif "下降" in tvl_txt:
+                tvl_rising = False
+
+    # ---- 三档（01 §3.1 操作化阈值；unknown 不计入满足条数）----
+    tier_ev = {
+        "正常": {
+            "c1": _gate_cond(None if px is None else (px >= ma20 and ma20 >= ma50),
+                             "现价 %s / MA20 %s / MA50 %s" % (g(px), g(ma20), g(ma50)),
+                             "现价≥MA20 且 MA20≥MA50", live_asof + " / " + kline_asof, "K线+live"),
+            "c2": _gate_cond(None if btcd_rising is None else (not btcd_rising),
+                             "BTC.D 3月 delta=%s" % ("unknown" if btcd_delta is None else str(g(btcd_delta)) + "pct"),
+                             "走平或下降", mrep_asof, "大盘报告 板块轮动.BTC_D"),
+            "c3": _gate_cond(stablecoin, "稳定币扩张=%s" % stablecoin, "扩张=True",
+                             mrep_asof, "大盘报告 文本关键词"),
+        },
+        "中性偏弱": {
+            "c1": _gate_cond(None if (px is None or not ma20) else (abs(px - ma20) / ma20 <= 0.05),
+                             "|现价−MA20|÷MA20=%s" % ("unknown" if (px is None or not ma20)
+                                                      else str(g(abs(px - ma20) / ma20 * 100.0)) + "%"),
+                             "≤5%", live_asof, "K线+live"),
+            "c2": _gate_cond(btcd_rising, "BTC.D 3月上行=%s" % btcd_rising, "上行=True",
+                             mrep_asof, "大盘报告 板块轮动.BTC_D"),
+            "c3": _gate_cond(None if (pool20 is None or btc20 is None) else (pool20 - btc20 <= -5.0),
+                             "全池20D等权−BTC20D=%s" % ("unknown" if (pool20 is None or btc20 is None)
+                                                        else str(g(pool20 - btc20)) + "pct"),
+                             "≤−5pct", kline_asof, "K线（全池等权 n=%d）" % len(pool_rets)),
+        },
+        "收缩": {
+            "c1": _gate_cond(None if (px is None or btcd_rising is None) else (px < ma50 and btcd_rising),
+                             "现价 %s vs MA50 %s；BTC.D上行=%s" % (g(px), g(ma50), btcd_rising),
+                             "现价<MA50 且 BTC.D上行", live_asof + " / " + mrep_asof, "K线+live+大盘报告"),
+            "c2": _gate_cond(None if a.liquidation_usd is None else (a.liquidation_usd > 5e8),
+                             "24h爆仓=%s" % ("未提供(--liquidation-usd)" if a.liquidation_usd is None
+                                             else str(g(a.liquidation_usd)) + "USD"),
+                             ">5亿USD", "-", "--liquidation-usd"),
+        },
+    }
+
+    def _score(ev):
+        return (sum(1 for c in ev.values() if c["判定"] is True),
+                [k for k, c in ev.items() if c["判定"] is None])
+
+    tier_scores = {t: _score(ev) for t, ev in tier_ev.items()}
+    best = max(s for s, _ in tier_scores.values())
+    tier_order = ("收缩", "中性偏弱", "正常")          # 并列取保守
+    winners = [t for t in tier_order if tier_scores[t][0] == best]
+    tier = winners[0]
+    tier_mode = {"正常": "正常", "中性偏弱": "防御", "收缩": "防御"}
+    tier_params = {"正常": {"max_new": PARAM_DEFAULTS["max_new"], "sell_only": False},
+                   "中性偏弱": {"max_new": 1, "sell_only": False},
+                   "收缩": {"max_new": 0, "sell_only": True}}
+    parallel = []
+    if len(winners) > 1:
+        for t in winners[1:]:
+            parallel.append({"并列档": t, "mode": tier_mode[t],
+                             "max_new": tier_params[t]["max_new"],
+                             "说明": "三档并列取保守（%s）；另一档参数差异留痕（01 §3.1 并列留痕）" % tier})
+        notes.append("三档并列（%s）→ 取保守档 %s" % ("/".join(winners), tier))
+
+    mode = tier_mode[tier]
+    if a.mode_override:
+        if not a.override_reason:
+            fail("--mode-override 积极 必须同时给 --override-reason（留痕铁律）")
+        mode = "积极"
+        notes.append("AI 显式覆盖 mode=积极（理由: %s）；机判 tier=%s 本应映射 %s"
+                     % (a.override_reason, tier, tier_mode[tier]))
+
+    # ---- 轮动阶段（01 §3.3 操作化阈值；满足 ≥2 条判定；并列取更晚）----
+    phase_ev = {
+        "早期": {
+            "c1": _gate_cond(None if (btc20 is None or eth20 is None) else (btc20 - eth20 > 5.0),
+                             "BTC20D−ETH20D=%s" % ("unknown" if (btc20 is None or eth20 is None)
+                                                   else str(g(btc20 - eth20)) + "pct"),
+                             ">+5pct", kline_asof, "K线"),
+            "c2": _gate_cond(btcd_rising, "BTC.D 3月上行=%s" % btcd_rising, "上行=True",
+                             mrep_asof, "大盘报告"),
+            "c3": _gate_cond(None if meme_ex is None else (meme_ex <= -5.0),
+                             "Meme龙头 %s 20日超额=%s" % (meme_l,
+                                                         "unknown" if meme_ex is None else str(g(meme_ex)) + "pct"),
+                             "≤−5pct", kline_asof, "K线+池 T2 首位"),
+        },
+        "中期": {
+            "c1": _gate_cond(None if (eth20 is None or btc20 is None) else (eth20 - btc20 > 0),
+                             "ETH20D−BTC20D=%s" % ("unknown" if (eth20 is None or btc20 is None)
+                                                   else str(g(eth20 - btc20)) + "pct"),
+                             ">0（汇率上行）", kline_asof, "K线"),
+            "c2": _gate_cond(None if (l1_ex is None and defi_ex is None)
+                             else (max(x for x in (l1_ex, defi_ex) if x is not None) > 0),
+                             "max(L1龙头 %s, DeFi龙头 %s) 20日超额" % (l1_l, defi_l),
+                             ">0（开始补涨）", kline_asof, "K线+池 T2 首位"),
+            "c3": _gate_cond(None if btcd_rising is None else (btcd_rising is False),
+                             "BTC.D 3月上行=%s" % btcd_rising, "从高点回落（=False）",
+                             mrep_asof, "大盘报告"),
+            "c4": _gate_cond(tvl_rising, "DeFi TVL 增长=%s" % tvl_rising, "增长=True",
+                             mrep_asof, "大盘报告 文本关键词"),
+        },
+        "晚期": {
+            "c1": _gate_cond(None if meme7 is None else (meme7 > 50.0),
+                             "Meme龙头 %s 7日=%s" % (meme_l, "unknown" if meme7 is None else str(g(meme7)) + "%"),
+                             ">50%（暴涨顶部信号）", kline_asof, "K线"),
+            "c2": _gate_cond(None if btcd_delta is None else (btcd_delta <= -1.0),
+                             "BTC.D 3月 delta=%s" % ("unknown" if btcd_delta is None else str(g(btcd_delta)) + "pct"),
+                             "≤−1pct", mrep_asof, "大盘报告"),
+            "c3": _gate_cond(None if (ex60_avg is None or extop10_avg is None) else (ex60_avg > extop10_avg),
+                             "60+桶20D超额均值 %s vs top10 均值 %s"
+                             % ("unknown" if ex60_avg is None else str(g(ex60_avg)) + "pct",
+                                "unknown" if extop10_avg is None else str(g(extop10_avg)) + "pct"),
+                             "60+ > top10（高弹性补涨）", kline_asof, "K线+池 分桶（60+ n=%d / top10 n=%d）"
+                             % (len(ex60s), len(extop10s))),
+            "c4": _gate_cond(True if a.funding_high else None,
+                             "费率高企=%s" % ("显式提供" if a.funding_high else "未提供(--funding-high)"),
+                             "True", "-", "--funding-high"),
+        },
+    }
+    phase_scores = {p: _score(ev) for p, ev in phase_ev.items()}
+    phase_order = ("晚期", "中期", "早期")               # 并列取更晚 = 更保守
+    phase = None
+    phase_winners = [p for p in phase_order if phase_scores[p][0] >= 2]
+    if phase_winners:
+        phase = phase_winners[0]
+        if len(phase_winners) > 1:
+            parallel.append({"并列阶段": phase_winners[1:],
+                             "说明": "阶段并列取更晚=更保守（01 §3.3 并列规则）→ %s" % phase})
+            notes.append("阶段并列（%s）→ 取更晚 %s" % ("/".join(phase_winners), phase))
+    else:
+        notes.append("无阶段满足 ≥2 条 → phase=unknown（须 AI 复核并留痕，不得默认填档）")
+
+    mode_evidence = {t: {"逐条": tier_ev[t], "满足数": tier_scores[t][0],
+                         "unknown": tier_scores[t][1]} for t in tier_ev}
+    phase_evidence = {p: {"逐条": phase_ev[p], "满足数": phase_scores[p][0],
+                          "unknown": phase_scores[p][1]} for p in phase_ev}
+    unknown_all = [t for t, (_, u) in list(tier_scores.items()) + list(phase_scores.items()) for _ in u]
+    if unknown_all:
+        notes.append("unknown 条件合计 %d 条（显式记录，不计入满足条数；补数据可传参扩展，不改码）" % len(unknown_all))
+
+    result = {
+        "成功": True, "工具": "rebalance_tools gate (v" + VERSION + ")", "版本": VERSION,
+        "市场": market,
+        "文档依据": "01_宏观环境定基调.md §3.1/§3.3（可复算操作化阈值，v2.6.0）",
+        "as_of": {"kline_last_bar": last_bar, "live": live_asof, "market_report": mrep_asof},
+        "tier": tier, "mode": mode, "sell_only": tier_params[tier]["sell_only"], "phase": phase,
+        "mode_evidence": mode_evidence,
+        "phase_evidence": phase_evidence,
+        "parallel": parallel,
+        "notes": notes,
+        "params": {"mode": mode, "max_new": tier_params[tier]["max_new"],
+                   "sell_only": tier_params[tier]["sell_only"],
+                   "说明": "gate 机判参数（01 §3.4 派生）；下游 fund/gap 显式命令行参数优先，"
+                          "冲突须在报告 数据缺失与冲突 留痕（v2.6.0 参数贯穿）"},
+    }
+    emit(result)
+
+
+# =====================================================================
+# run — 半编排（v2.6.0，探索版命题③吸收）：无 AI 介入点段一次跑完
+# =====================================================================
+
+def run_run(argv):
+    ap = argparse.ArgumentParser(
+        prog="rebalance_tools run",
+        description="半编排（v2.6.0）：fetch(klines/ticks/volume-unit) → fund(+params.json) → gate → "
+                    "score/score2（--cycle 继承 gate.phase）→ leaders（--strong 继承 score 强势板块）一次跑完；"
+                    "map/gap/assemble/verify 需 AI 侧 MCP 数据与目标分配，不在编排内（结尾打印 AI 待办清单）",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    add_market_arg(ap)
+    ap.add_argument("--data-dir", required=True, help="取数与产物目录（如 tests）")
+    ap.add_argument("--balance", type=float, required=True, help="账户权益（fund 输入）")
+    ap.add_argument("--available", type=float, required=True, help="可用现金（fund 输入）")
+    ap.add_argument("--mode", default=None, choices=("积极", "正常", "防御"),
+                    help="fund --mode（缺省 = fund 市场预设 auto）")
+    ap.add_argument("--skip-fetch", action="store_true", help="跳过 fetch（K线/实时价/单位表已就绪时）")
+    a = parsed(ap, argv, "run")
+    market = resolve_market(a.market)
+    if market != "加密货币":
+        fail("run 半编排目前仅支持 --market 加密货币（美股组判定/选股流程不同，暂不编排）")
+    d = a.data_dir
+    here = os.path.dirname(os.path.abspath(__file__))
+    fetch_py = os.path.join(here, "rebalance_fetch.py")
+    self_py = os.path.abspath(__file__)
+
+    def _step(label, cmd, out_file):
+        r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        if r.returncode != 0 or not os.path.isfile(out_file):
+            fail("run 编排步骤失败: %s（exit=%s）\nstdout: %s\nstderr: %s"
+                 % (label, r.returncode, (r.stdout or "")[-1500:], (r.stderr or "")[-1500:]))
+        out, oerr = load_json_file(out_file, label + " 输出")
+        if oerr or not isinstance(out, dict):
+            fail("run 编排步骤输出不可读: %s: %s" % (label, oerr))
+        return out
+
+    steps = []
+    if not a.skip_fetch:
+        for sub, fname in (("klines", "crypto_prices_raw.json"), ("ticks", "live_prices.json"),
+                           ("volume-unit", "volume_min_unit.json")):
+            _step("fetch " + sub, [sys.executable, fetch_py, sub, "--data-dir", d],
+                  os.path.join(d, fname))
+            steps.append("fetch " + sub)
+    else:
+        steps.append("fetch（--skip-fetch 跳过，须确认三件产物已就绪）")
+
+    fund_out = os.path.join(d, "fund.json")
+    fund_cmd = [sys.executable, self_py, "fund", "--market", market,
+                "--balance", str(a.balance), "--available", str(a.available), "--out", fund_out]
+    if a.mode:
+        fund_cmd += ["--mode", a.mode]
+    fund = _step("fund", fund_cmd, fund_out)
+    steps.append("fund（+params.json 参数贯穿）")
+
+    gate_out = os.path.join(d, "gate.json")
+    gate_cmd = [sys.executable, self_py, "gate", "--market", market,
+                "--prices", os.path.join(d, "crypto_prices_raw.json"),
+                "--live", os.path.join(d, "live_prices.json"), "--out", gate_out]
+    mrep = os.path.join(d, "market_report.json")
+    if os.path.isfile(mrep):
+        gate_cmd += ["--market-report", mrep]
+    else:
+        steps.append("gate（未发现 market_report.json，BTC.D/稳定币/TVL 条件按 unknown）")
+    gate = _step("gate", gate_cmd, gate_out)
+    steps.append("gate（tier=%s mode=%s phase=%s）" % (gate.get("tier"), gate.get("mode"), gate.get("phase")))
+
+    phase = gate.get("phase")
+    if not phase:
+        fail("gate 未产出 phase（无阶段满足 ≥2 条）：score/score2 需 AI 显式给 --cycle 后，"
+             "改用分步命令继续（编排止步于 gate，fail-fast）")
+    score_out = os.path.join(d, "score.json")
+    score = _step("score", [sys.executable, self_py, "score", "--market", market,
+                            "--prices", os.path.join(d, "score_prices.json"), "--cycle", phase,
+                            "--out", score_out], score_out)
+    steps.append("score（cycle=%s 继承 gate）" % phase)
+    score2_out = os.path.join(d, "score2.json")
+    score2 = _step("score2", [sys.executable, self_py, "score2", "--market", market,
+                              "--prices", os.path.join(d, "score2_prices.json"),
+                              "--sector-score", score_out, "--cycle", phase, "--out", score2_out],
+                   score2_out)
+    steps.append("score2（cycle=%s 继承 gate）" % phase)
+
+    strong = [s for s in (score.get("强势板块") or []) if s]
+    leaders_out = os.path.join(d, "leaders.json")
+    lcmd = [sys.executable, self_py, "leaders", "--market", market,
+            "--prices", os.path.join(d, "crypto_prices_raw.json"), "--out", leaders_out]
+    if strong:
+        lcmd += ["--strong", ",".join(strong)]
+    leaders = _step("leaders", lcmd, leaders_out)
+    steps.append("leaders（确认=%s 降档=%s）" % (leaders.get("确认后强势板块"), leaders.get("降档板块")))
+
+    todo = [
+        "① AI 侧 MCP 只读取数并落盘 %s：get_accounts / cta_strategies_get_all / get_positions / "
+        "get_active_orders / 三份报告（strategies_raw.json / market_report.json / long·short_report.json）" % d,
+        "② rebalance_fetch.py strategies --data-dir %s --score %s --score2 %s --leaders %s"
+        "（池外币加 --out-of-pool 'SYM:板块'）→ map_strategies.json / map_classifications.json"
+        % (d, score_out, score2_out, leaders_out),
+        "③ map --market %s --strategies map_input.json --classifications map_classifications.json "
+        "--balance <权益> --out %s" % (market, os.path.join(d, "map.json")),
+        "④ 构造 gap_snapshot.json（当前市值=实际持仓×实时价；目标资金=落地口径=目标持仓×现价，"
+        "决策口径写 槽位资金 字段，v2.6.0 qty-first）",
+        "⑤ gap --market %s --snapshot ... --params %s --open-priority order --out %s"
+        % (market, os.path.join(d, "params.json"), os.path.join(d, "gap.json")),
+        "⑥ cycle --market %s --date <今日> [--last-rebalance <上次>] [--trigger ...] --out %s"
+        % (market, os.path.join(d, "cycle.json")),
+        "⑦ assemble --market %s --fund %s --gap gap.json --score %s --score2 %s --map map.json "
+        "--gate %s --analysis-time \"YYYY-MM-DD HH:MM:SS +08:00\" --out 报告.json"
+        % (market, fund_out, score_out, score2_out, gate_out),
+        "⑧ AI 填写留空字段 → verify --market %s --report 报告.json --balance <最新> --available <最新> "
+        "（--params %s 可继承）循环至 校验=通过" % (market, os.path.join(d, "params.json")),
+    ]
+    emit({"成功": True, "工具": "rebalance_tools run (v" + VERSION + ")", "版本": VERSION,
+          "市场": market, "文档依据": "00_index.md §4.2（v2.6.0 run 半编排）",
+          "data_dir": d, "已完成步骤": steps,
+          "gate": {"tier": gate.get("tier"), "mode": gate.get("mode"), "phase": gate.get("phase"),
+                   "sell_only": gate.get("sell_only"), "parallel": gate.get("parallel"),
+                   "notes": gate.get("notes"), "params": gate.get("params")},
+          "fund": {"总预算B": (fund.get("预算") or {}).get("总预算B"),
+                   "策略槽位": fund.get("策略槽位"), "micro": fund.get("micro")},
+          "score 强势板块": strong,
+          "score2 强势子板块": [s for s in (score2.get("强势子板块") or []) if s],
+          "leaders 确认后强势板块": leaders.get("确认后强势板块"),
+          "leaders 降档板块": leaders.get("降档板块"),
+          "AI 侧待办（编排不含 AI 介入点）": todo})
+
+
+# =====================================================================
 # 入口：子命令分派（v1 兼容：首个参数以 -- 开头 → fund）
 # =====================================================================
 
@@ -2748,7 +3358,7 @@ def main():
     runner = {"fund": run_fund, "gap": run_gap, "verify": run_verify,
               "score": run_score, "map": run_map, "exec": run_exec,
               "cycle": run_cycle, "score2": run_score2, "assemble": run_assemble,
-              "leaders": run_leaders}[argv[0]]
+              "leaders": run_leaders, "gate": run_gate, "run": run_run}[argv[0]]
     try:
         runner(rest)  # 正常退出路径均已自行输出 JSON（emit/fail）
     except Exception:

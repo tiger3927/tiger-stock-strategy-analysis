@@ -139,10 +139,11 @@
 ```
 vnpy_mcp 取数（只读）：get_accounts / cta_strategies_get_all / get_positions / get_active_orders / get_all_contracts
   + cta_strategy_get_parameters_info（读 `volume_min_unit` 最小交易单位 → 铺开逐币档位表，与 get_contract.min_volume 交叉核对；12 §13.6-5）
-  → fund（--balance --available，任务参数）
-  → 快照 JSON（策略名称/板块/分桶/当前市值/目标资金；目标资金来源 = §7.3.1.2 评分分配 或 §4.4 无评分最小闭环；板块/分桶映射 = 04 §6）
-  → gap（缺口 + 2% 不动 + 幅度截断 + 新仓名额 + 资金匹配）
-  → score / score2 / map（板块·分桶评分与 S1–S5 映射；无评分场景可跳过，但须按 §4.4 标注）
+  → fund（--balance --available，任务参数；--out 时同目录自动写 params.json —— v2.6.0 参数一次解析贯穿）
+  → gate（v2.6.0：tier/mode/phase 机判 + 逐条证据/并列留痕 → gate.json；下游 score/score2/assemble --gate 继承；规格 = 01 附录 A）
+  → 快照 JSON（策略名称/板块/分桶/当前市值/目标资金＝落地口径、可选 槽位资金＝决策口径（v2.6.0 qty-first）；目标资金来源 = §7.3.1.2 评分分配 或 §4.4 无评分最小闭环；板块/分桶映射 = 04 §6）
+  → gap（--params tests/params.json：缺口 + 2% 不动 + 幅度截断 + 新仓名额 + 资金匹配）
+  → score / score2 / map（板块·分桶评分与 S1–S5 映射；--gate 继承轮动阶段；无评分场景可跳过，但须按 §4.4 标注）
   → leaders（02 §4.2.5 龙头确认：逐板块核「T2 首位」20 日超额 ≥0；不通过 → 强制降中性；
            `--strong` 传 score 的强势板块清单 → 输出 确认后强势板块 / 降档板块；`audit --leaders` 对账）
   → assemble（17 字段骨架；数值自洽，指令/映射/文本仍空）
@@ -152,6 +153,8 @@ vnpy_mcp 取数（只读）：get_accounts / cta_strategies_get_all / get_positi
            不通过 → 修正后重跑；提示项须逐条人工确认）
   → 输出最终报告（§4.1-5）
 ```
+
+**v2.6.0 run 半编排（可选加速）**：`run --data-dir tests --balance <权益> --available <可用> [--mode] [--skip-fetch]` 一次跑完 fetch→fund(+params.json)→gate→score→score2→leaders（无 AI 介入点段），结尾打印 AI 侧待办清单；MCP 取数 / 快照构造 / 报告填写 / verify 仍按上表在 AI 侧介入。
 
 ### 4.3 反模式（出现即「任务未完成」，禁止当作完成汇报）
 
@@ -196,12 +199,12 @@ vnpy_mcp 取数（只读）：get_accounts / cta_strategies_get_all / get_positi
 
 ## 五、版本信息
 
-> **版本**: v1.0
+> **版本**: v1.3（工具 v2.6.0）
 > **方法核心**: 轮动预测 = 轮动阶段 + BTC.D/ETH-BTC + 板块相对强弱（01 §3.5），只抓拐点或初期，不当后视镜
-> **更新日期**: 2026-09-15
+> **更新日期**: 2026-09-17
 > **适用范围**: BINANCE_LINEAR U 本位永续多策略组合的叙事板块轮动调仓，适用于 20-50 策略规模（当前场景：30 个 MARTIN-*USDT 策略）
 > **数据通道**: 读取（分析报告 / 账户 / 持仓 / 策略 / 成交委托 / 行情合约 / 系统状态）一律经 vnpy_mcp 实时查询（清单见 12 §13.4）；输出为调仓报告 JSON；不使用任何 Redis 方面的工具
-> **工具现状**: `rebalance_tools.py` **v2.4.1** 已支持 `--market 加密货币`（预设参数 + crypto_pool.json 池适配器 + USDT 单币种 verify + 币版 S 矩阵 / 轮动阶段因子表 / 资金费率窗口 + **`leaders` 龙头确认**；**10 子命令**，前 9 个缺省 美股 行为与 v2.3 逐项一致）；`rebalance_audit.py` **v1.1**（第 5 道闸，+`--leaders` 龙头确认对账）、`rebalance_acceptance.py` **v1.1**（一键验收，目录约定含可选 `leaders.json`）；币版验收 `tests/test_rebalance_tools_crypto.py`（含 `leaders` / `--open-priority` / 决策口径键别名 用例）、美股回归 `tests/test_rebalance_tools_v2.py` + `tests/test_rebalance_tools_sweep.py`（均全绿）；详见 06 §7.3.1.5 与 12 §13.5
+> **工具现状**: `rebalance_tools.py` **v2.6.0** 已支持 `--market 加密货币`（预设参数 + crypto_pool.json 池适配器 + USDT 单币种 verify + 币版 S 矩阵 / 轮动阶段因子表 / 资金费率窗口 + **`leaders` 龙头确认** + v2.6.0 新增 **`gate` 机判 / `run` 半编排 / params.json 参数一次解析贯穿 / qty-first 单一口径（指令 `槽位资金` 决策口径 + `目标资金` 落地口径，verify 兼容旧报告）/ micro 分支（B<3,000 自动 max_new=1）**；**12 子命令**，缺省 美股 行为与 v2.3 逐项一致）；`rebalance_audit.py` **v1.1**（第 5 道闸，+`--leaders` 龙头确认对账）、`rebalance_acceptance.py` **v1.1**（一键验收，目录约定含可选 `leaders.json`）；币版验收 `tests/test_rebalance_tools_crypto.py`（含 `leaders` / `--open-priority` / 决策口径键别名 用例）、美股回归 `tests/test_rebalance_tools_v2.py` + `tests/test_rebalance_tools_sweep.py`；v2.6.0 重放验收（gate/params/qty-first/micro/run + 旧口径报告兼容回归）2026-09-17 全通过；详见 06「fund 工具调用 v2.6.0 注记」、01 附录 A 与 12 §13.5
 
 ### 变更历史
 
@@ -249,4 +252,19 @@ vnpy_mcp 取数（只读）：get_accounts / cta_strategies_get_all / get_positi
      (13) 测试：`tests/test_rebalance_tools_crypto.py` 新增 `test_leaders` / `test_gap_open_priority` / `test_verify_decl_money_alias`（正负例），币版全绿；美股回归 `test_rebalance_tools_v2.py` 全绿。
      第四批（验收编排）：新增 **14 变更验收要点**（外部智能体对照验收「变更」本身：硬门 H1–H6 / 内容门 D1–D11 / 反模式 / §5.3 机读断言 + §5.4 容差 / 差异归因 / 判分），本组篇数 14 → **15**；
      13 与 00 §4 的交叉引用同步指向 14；13 §6 的参考基准改为「价格相关容差 + 结构性零容差」双轨，避免自动 diff 假失败。 -->
+
+<!-- 迭代 2026-09-17（探索版有效方案吸收）：v1.3 / 工具 v2.5.0 → v2.6.0 ——
+     背景：加密货币探索（docs/调仓/加密货币探索，实验组）五点差异中四项被正式版实测事故验证有效，按「移植而非替换」吸收（探索版文档由用户删除，知识先全部落位正式版）：
+     (1) gate 机判（探索版命题①）：新增 `gate` 子命令，把 01 §3.1 三档 / §3.3 轮动阶段固化为操作化阈值机判，逐条输出 值/阈值/判定/as_of/来源，
+         数据缺失 → unknown 不计入满足、三档并列取保守（收缩>中性偏弱>正常）、阶段并列取更晚；01 §3.1/§3.3 增补操作化阈值小节 + 附录 A gate.json 规格；
+         score/score2 增 --gate 继承 phase；assemble 增 --gate 继承 mode/phase（写入 待人工确认）；02 §4.2.5 增「评分敏感性警示 + 阶段判定与评分解耦」（根因：2026-09-16 判早期 vs 09-17 判中期同数据分歧 → 标的 BNB/UNI 改变，且存在「中期→DeFi+10→强势→中期②成立」自证循环）；
+     (2) params.json 参数一次解析贯穿（命题④）：fund --out 自动写同目录 params.json；gap/verify 增 --params 继承（显式参数优先、冲突留痕、输出 参数来源/冲突留痕）——
+         根治「fund 调参不传 gap」（2026-09-16/17 实测：base_capital 1000→100 未传 gap，AI 手工补传）；
+     (3) qty-first 单一口径（命题③）：指令新字段 `槽位资金`（决策口径），`目标资金` 改为落地口径；gap 快照可选 槽位资金，门槛按槽位资金判（信息性异常消除，重放实测异常清零）；verify 兼容模式自动识别新旧口径（历史报告可 verify，重放通过）；
+         06 §7.3.1.2 两口径落位表修订、10 §11.2 两口径写法/AI 可写区收敛 修订；
+     (4) micro 分支（命题⑤）：加密货币 B<3,000 → max_new=1、单槽位、06 §7.3.1.2 区间表声明不适用（fund 自动声明，免 AI 逐轮人工裁决）；
+     (5) fail-fast（工程修正）：输入结构不符 → 退出非 0 并指明文件与键，真实缺失 → unknown 显式记录（11 §12.7 表新增 7.7/7.8/7.9 三条防线）；
+     (6) run 半编排（命题③工程面）：`run` 子命令一次跑完 fetch→fund→gate→score→score2→leaders，结尾打印 AI 待办清单（进程 ~17 → 1 编排进程）；
+     (7) 验收：gate 重放与 AI 手工判定逐条一致（防御+中期）、params 贯穿重放（参数来源=params.json、零冲突）、qty-first 重放（异常清零）+ 旧口径报告兼容回归（校验=通过）、run --skip-fetch 全链通过；
+     探索版知识落位映射：01_gate→01 §3.1/§3.3/附录A+gate；02 §2.2 micro→06 §7.3.1.2；02 §2.3 qty-first→06 §7.3.1.2+10 §11.2；02 §2.1 评分警示→02 §4.2.5；04 §4.3 防线→11 §12.7；04 §4.4-2 两版 diff 验收→14（本次变更验收即采用）。 -->
 
