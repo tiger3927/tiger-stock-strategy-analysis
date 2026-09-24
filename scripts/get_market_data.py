@@ -1669,15 +1669,18 @@ def fetch_economic_calendar():
 
 # OrioSearch 答案"无有效信息"模板句式：搜索结果中没有目标数据时的固定回复
 # （2026-09-08 实测 14 项中 11 项为此类回复，若不计入 hit 会高估数据质量）
+# （2026-09-21 增补：弯引号 don't、"do not state/show"、"there is no X" 等实际模板句，
+#   此前这些回复会被误计为 hit）
 _NO_ANSWER_PATTERNS = (
     # 允许 markdown 加粗（如 "do **not** include"）等干扰字符
-    r"do\s+\**not\**\s+(?:contain|include|provide|have)",
-    r"does\s+\**not\**\s+(?:contain|include|provide|have)",
-    r"don'?t\s+(?:contain|include|provide|have)",
+    r"do\s+\**not\**\s+(?:contain|include|provide|have|state|show)",
+    r"does\s+\**not\**\s+(?:contain|include|provide|have|state|show)",
+    r"don['\u2019]?t\s+(?:contain|include|provide|have|state|show)",
     r"no explicit", r"not explicitly",
     r"cannot be (?:found|determined|calculated)",
     r"unable to (?:find|determine|locate)",
     r"does not (?:provide|have)",
+    r"there is no \w",
     r"not available in", r"no data",
     r"无法(?:找到|确定|获取|提供)", r"未能(?:找到|获取)", r"没有(?:相关|找到|提供)",
 )
@@ -1791,6 +1794,9 @@ def _search_oriosearch(query):
         "search_depth": "advanced",
         "max_results": 5,
         "include_answer": True,
+        # 2026-09-21: 服务默认 general 主题索引已失效（返回中文站/词典结果，14 项全空）；
+        # 服务仅接受 general|news 两种 topic（finance/science 会 422），news 主题可恢复财经命中
+        "topic": "news",
     }
 
     def _try_request(payload_copy):

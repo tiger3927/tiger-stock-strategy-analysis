@@ -51,7 +51,7 @@
 |:--|:--|:--|:--:|:--|
 | 01 | [`01_architecture.md`](01_architecture.md) | AI 完整/非AI 交互流程、订单生命周期 | ~100 | 需要理解整体架构时 |
 | 02 | [`02_parameters.md`](02_parameters.md) | 全部 50 个参数定义（24 AI 可控 + 4 人工作业层控制 + 其余人工）+ 默认值 + 分类速查 | ~150 | 查参数含义、AI可修改哪些参数 |
-| 03 | [`03_variables_and_state.md`](03_variables_and_state.md) | 全部 16 个运行时变量 + `_build_status_dict()` | ~80 | 查变量含义、上报AI的状态内容 |
+| 03 | [`03_variables_and_state.md`](03_variables_and_state.md) | 全部 17 个运行时变量 + `_build_status_dict()` | ~80 | 查变量含义、上报AI的状态内容 |
 | 04 | [`04_ai_interface.md`](04_ai_interface.md) | AI结果落地路径 + 参数复位规则 + AI返回JSON约定 | ~120 | 查AI JSON格式、复位规则 |
 | 05 | [`05_stop_profit_loss.md`](05_stop_profit_loss.md) | 止盈止损全套机制（固定/ATR/移动止盈） | ~80 | 问止盈止损怎么触发 |
 | 06 | [`06_grid_martin.md`](06_grid_martin.md) | 网格加减仓四段逻辑（减仓→加仓→开仓） | ~100 | 问网格怎么加减仓 |
