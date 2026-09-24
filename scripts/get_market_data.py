@@ -104,14 +104,14 @@ US_MAJOR_INDICES_TICKERS = ["SPY", "QQQ", "DIA", "IWM", "RSP", "^VIX"]
 
 US_MACRO = {
     "^TNX": "美国10年期国债收益率",
-    "2YY.F": "美国2年期国债期货（替代 US2Y）",
+    "^FVX": "美国5年期国债收益率（2Y 代理：Yahoo 无 2 年期收益率符号，2YY.F 实为 Urbana Corp 个股）",
     "DX-Y.NYB": "美元指数 DXY",
     "SHY": "1-3年国债 ETF（短端利率）",
     "TLT": "20+年国债 ETF（长端利率）",
     "HYG": "高收益债 ETF（信用利差）",
     "LQD": "投资级公司债 ETF（信用利差基准）",
 }
-US_MACRO_TICKERS = ["^TNX", "2YY.F", "DX-Y.NYB", "SHY", "TLT", "HYG", "LQD"]
+US_MACRO_TICKERS = ["^TNX", "^FVX", "DX-Y.NYB", "SHY", "TLT", "HYG", "LQD"]
 
 US_SECTORS = {
     "XLK": "科技",
@@ -134,6 +134,12 @@ US_STYLE = {
 }
 US_STYLE_TICKERS = ["VUG", "VTV"]
 
+US_COMMODITIES = {
+    "GLD": "黄金 ETF（避险/大宗商品代理）",
+    "USO": "WTI 原油 ETF（能源/大宗商品代理）",
+}
+US_COMMODITIES_TICKERS = ["GLD", "USO"]
+
 # 行业龙头个股（用于美股分析）
 US_SECTOR_LEADERS = {
     "NVDA": "英伟达（AI芯片龙头）",
@@ -142,10 +148,13 @@ US_SECTOR_LEADERS = {
     "GOOG": "谷歌（AI+搜索）",
     "AMZN": "亚马逊（云计算+电商）",
     "SOXX": "半导体ETF",
+    "SMH": "半导体ETF（SOXX 的第二代理）",
+    "TSLA": "特斯拉（汽车龙头）",
     "AMD": "AMD（CPU/GPU）",
     "AVGO": "博通（网络/AI芯片）",
     "TSM": "台积电（晶圆代工）",
     "MU": "美光（存储芯片）",
+    "GOOGL": "谷歌A类（与 GOOG 同公司，交叉验证口径）",
     "JPM": "摩根大通（银行龙头）",
     "GS": "高盛（投行）",
     "BAC": "美国银行",
@@ -156,12 +165,13 @@ US_SECTOR_LEADERS_TICKERS = list(US_SECTOR_LEADERS.keys())
 
 # 合并所有 US labels（用于 us-all 超级批次）
 US_ALL_LABELS = {}
-for d in [US_MAJOR_INDICES, US_MACRO, US_SECTORS, US_STYLE, US_SECTOR_LEADERS]:
+for d in [US_MAJOR_INDICES, US_MACRO, US_SECTORS, US_STYLE, US_COMMODITIES, US_SECTOR_LEADERS]:
     US_ALL_LABELS.update(d)
 _seen = set()
 US_ALL_TICKERS = []
 for group in [US_MAJOR_INDICES_TICKERS, US_MACRO_TICKERS,
-              US_SECTORS_TICKERS, US_STYLE_TICKERS, US_SECTOR_LEADERS_TICKERS]:
+              US_SECTORS_TICKERS, US_STYLE_TICKERS, US_COMMODITIES_TICKERS,
+              US_SECTOR_LEADERS_TICKERS]:
     for t in group:
         if t not in _seen:
             _seen.add(t)
@@ -1669,114 +1679,245 @@ def fetch_economic_calendar():
 
 # OrioSearch 答案"无有效信息"模板句式：搜索结果中没有目标数据时的固定回复
 # （2026-09-08 实测 14 项中 11 项为此类回复，若不计入 hit 会高估数据质量）
-# （2026-09-21 增补：弯引号 don't、"do not state/show"、"there is no X" 等实际模板句，
-#   此前这些回复会被误计为 hit）
 _NO_ANSWER_PATTERNS = (
     # 允许 markdown 加粗（如 "do **not** include"）等干扰字符
-    r"do\s+\**not\**\s+(?:contain|include|provide|have|state|show)",
-    r"does\s+\**not\**\s+(?:contain|include|provide|have|state|show)",
-    r"don['\u2019]?t\s+(?:contain|include|provide|have|state|show)",
-    r"no explicit", r"not explicitly",
+    r"do\s+\**not\**\s+(?:contain|include|provide|have|show|lists|list|report|give|state|offer|disclose)",
+    r"does\s+\**not\**\s+(?:contain|include|provide|have|show|lists|list|report|give|state|offer|disclose)",
+    r"did\s+\**not\**\s+(?:contain|include|provide|show|report|list)",
+    r"don['\u2019]?t\s+(?:contain|include|provide|have|state|show|list)",
+    r"no\s+(?:explicit|information|data|specific|figures?|numbers?|usable|relevant|meaningful)",
+    r"not\s+(?:explicitly|available|provided|listed|mentioned|stated|disclosed|specified|shown)",
     r"cannot be (?:found|determined|calculated)",
-    r"unable to (?:find|determine|locate)",
-    r"does not (?:provide|have)",
-    r"there is no \w",
+    r"unable to (?:find|determine|locate|provide)",
+    r"does not (?:provide|have|show|include|list)",
     r"not available in", r"no data",
-    r"无法(?:找到|确定|获取|提供)", r"未能(?:找到|获取)", r"没有(?:相关|找到|提供)",
+    r"only (?:show|shows|contain|contains|cover|covers|provide|provides|list|lists|address|addresses)\b",
+    r"the only result", r"they are (?:about|unrelated)", r"unrelated to",
+    r"无法(?:找到|确定|获取|提供|给出)", r"未能(?:找到|获取)",
+    r"没有(?:相关|找到|提供|给出)", r"未(?:找到|包含|给出|提供|显示|列出|涉及|发现)",
+    r"均(?:未|不含)", r"无(?:相关|有效)?(?:数据|信息|结果)",
+    r"建议(?:直接|查看|访问|查询)",
 )
 _NO_ANSWER_RE = re.compile("|".join(_NO_ANSWER_PATTERNS), re.IGNORECASE)
 
 
 def _is_no_answer(text):
-    """判断 OrioSearch 答案是否为"无有效信息"模板回复（有返回但非真实数据）"""
+    """判断答案是否为"无有效信息"模板回复（有返回但非真实数据）
+
+    2026-09-22 补全句式表：原表漏掉 do not show / there is no information /
+    there are no specific figures 及中文"未找到/未包含/建议直接查看"，导致
+    PutCallRatio/Secondary/MarginDebt 三项被计为 hit（total 14 / hit 3 假命中）。
+    """
     if not text:
         return True
     return bool(_NO_ANSWER_RE.search(text[:300]))
 
 
+# ---------- 有效值闸门（第二道判据） ----------
+# 仅靠句式表判不住"有返回、不含否定模板词、但通篇没有目标数值"的答案。
+# 要求答案里存在 ① 带量纲数值（$X.XT/B/M、NNN%、NNNbp）或
+#              ② 指标关键词邻域内带小数的指数值（MOVE 81.2 / F&G 33.66 / P-C 0.58）。
+_MAG_RE = re.compile(
+    r"\$\s?\d[\d,]*(?:\.\d+)?\s*(?:万亿|千亿|trillion|billion|million|[tbm])?"
+    r"|\d[\d,]*(?:\.\d+)?\s*(?:%|percent|bps?\b|basis points?\b|pct\b|万亿|trillion|billion|million)",
+    re.IGNORECASE)
+_INDEX_NUM_RE = re.compile(r"\d{1,4}\.\d{1,4}|\d{2,4}\s*(?:points?\b|index\b)", re.IGNORECASE)
+_YEAR_RE = re.compile(r"^(?:19|20)\d{2}$")
+_INDICATOR_KEYWORDS = {
+    "HY_OAS": ("oas", "spread", "high yield"),
+    "MOVE": ("move", "bond vol", "treasury vol"),
+    "FearGreed": ("fear", "greed", "f&g"),
+    "MarginDebt": ("margin", "debit", "finra"),
+    "Buyback": ("buyback", "repurchase"),
+    "IPO": ("ipo", "raised", "proceeds", "pricing"),
+    "Secondary": ("secondary", "follow-on", "offering"),
+    "FOMC": ("fomc", "fed funds", "rate", "basis point", "hike", "cut"),
+    "CPI": ("cpi", "inflation", "consumer price"),
+    "FedWatch": ("fedwatch", "fed funds", "probability", "oisl", "implied"),
+    "PutCallRatio": ("put/call", "put call", "p/c", "ratio"),
+    "Liquidity": ("rrp", "reverse repo", "liquidity"),
+    "Calendar": ("mon", "tue", "wed", "thu", "fri", "est", "release"),
+    "Earnings": ("earnings", "fiscal", "q3", "q4", "report"),
+}
+
+
+def _validate_indicator_value(key, answer):
+    """校验答案里是否真有该指标数值 → (ok, 展示用关键数值)"""
+    if not answer:
+        return False, "N/A"
+    mags = [m.group(0).strip() for m in _MAG_RE.finditer(answer)]
+    mags = [m for m in mags if not _YEAR_RE.match(m)]
+    if mags:
+        return True, " | ".join(dict.fromkeys(mags))[:110]
+    low = answer.lower()
+    near = []
+    for kw in _INDICATOR_KEYWORDS.get(key, ()):
+        start = 0
+        while True:
+            i = low.find(kw, start)
+            if i < 0:
+                break
+            start = i + 1
+            w = low[max(0, i - 45): i + len(kw) + 45]
+            for n in _INDEX_NUM_RE.finditer(w):
+                tok = n.group(0).strip()
+                if not _YEAR_RE.match(tok):
+                    near.append(tok)
+    if near:
+        return True, " | ".join(dict.fromkeys(near))[:110] + " (无量纲)"
+    return False, "N/A(答案无目标数值)"
+
+
+# ---------- 直连结构化源（优先于搜索层） ----------
+# 2026-09-22 实测：OrioSearch 对这批英文指标查询返回无关词条（"MOVE index"→知乎
+# 表情包、"CNN fear greed"→卷积神经网络、"S&P 500 buyback"→"字母 s"百科），
+# 中文与常识控制组同样返回垃圾 → 上游检索源不适配，改查询词无解。
+# 能直取的指标一律走直连，搜索只兜底。
+CNN_FG_URL = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
+YAHOO_DIRECT_SYMBOLS = {"VIX": "^VIX", "VIX9D": "^VIX9D", "VXN": "^VXN", "MOVE": "^MOVE"}
+
+
+def _fetch_direct_indicators():
+    """直连源采集（CNN 恐惧贪婪 JSON + Yahoo 指数族）。失败项缺席，由搜索层兜底。
+
+    注：Yahoo 无 "^VIX6D"（404），VIX 期限结构用 ^VIX9D vs ^VIX(=1M)；
+    这些是指数符号，不能当 ticker 传给行情批次（不带 ^ 会返回"无数据"）。
+    """
+    out = {}
+    try:
+        r = requests.get(CNN_FG_URL, headers={"User-Agent": _YAHOO_UA}, timeout=(5, 20))
+        fg = (r.json() or {}).get("fear_and_greed") or {}
+        score = fg.get("score")
+        if score is not None:
+            out["FearGreed"] = {
+                "query": CNN_FG_URL, "answer": "direct: CNN fear_and_greed JSON",
+                "value": "%.2f (%s)" % (float(score), fg.get("rating", "")),
+                "as_of": fg.get("timestamp", ""),
+                "prev_close": safe_float(fg.get("previous_close")),
+                "prev_1_week": safe_float(fg.get("previous_1_week")),
+                "prev_1_month": safe_float(fg.get("previous_1_month")),
+                "prev_1_year": safe_float(fg.get("previous_1_year")),
+                "source": "direct:cnn", "time_s": 0.0}
+    except Exception:
+        pass
+    for key, sym in YAHOO_DIRECT_SYMBOLS.items():
+        try:
+            df = get_history_dataframe(sym, "1mo")
+        except Exception:
+            df = None
+        if df is None or not len(df):
+            continue
+        try:
+            val = round(float(df["Close"].iloc[-1]), 2)
+        except Exception:
+            continue
+        out[key] = {"query": "yfinance:" + sym, "answer": "yahoo " + sym + " close",
+                    "value": val, "as_of": str(df.index[-1])[:10],
+                    "source": "direct:yahoo:" + sym, "time_s": 0.0}
+    return out
+
+
 def fetch_web_indicators():
     """
-    通过 OrioSearch 获取全部 14 项市场指标。
-
-    查询词使用 WEB_INDICATOR_QUERIES_TEMPLATE 模板，
-    日期参数在调用时动态计算，避免硬编码。
+    市场指标采集：直连源优先 + OrioSearch 兜底，并对每项做有效值校验。
 
     Returns:
         dict: {
-            "source": "oriosearch",
-            "fetched_at": "...",
-            "total": 14,
-            "hit": 13,            # 有效命中数（不含 no_answer 与 失败）
-            "time_s": 1.23,
-            "indicators": {
-                "HY_OAS": {"query":"...", "answer":"...", "value":"263 bps",
-                           "source":"oriosearch", "time_s":0.09},
-                # source 取值:
-                #   "oriosearch"  有返回且含有效数据（计入 hit）
-                #   "no_answer"   有返回但为"无有效信息"模板回复（不计入 hit）
-                #   "失败"        接口无返回/超时
-            }
+            "source": "direct+oriosearch", "fetched_at": "...",
+            "total": 14, "hit": N,            # hit 仅统计通过量纲校验的真有效值
+            "time_s": 墙钟秒, "search_time_s": 各项搜索耗时之和,
+            "vix_term_structure": {"VIX":..,"VIX9D":..,"VXN":..,"spread_9D_minus_1M":..},
+            "indicators": {key: {"query","answer","value","source","time_s",["as_of"]}}
         }
+        indicators[key]["source"] 取值：
+          "direct:cnn" / "direct:yahoo:^XX"  直连结构化源（计入 hit）
+          "oriosearch"      搜索返回且通过量纲校验（计入 hit）
+          "no_answer"       搜索返回"无有效信息"模板（不计入 hit）
+          "no_valid_value"  有返回但无该指标目标数值（不计入 hit）
+          "失败"            接口无返回/超时
     """
     now = datetime.datetime.now(timezone.utc)
-    year = now.year
-    month = now.month
-    month_name = now.strftime("%B")
+    t_start = time.time()
+    year, month = now.year, now.month
     prev_month = month - 1 if month > 1 else 12
-    prev_month_name = datetime.datetime(year if month > 1 else year - 1, prev_month, 1).strftime("%B")
-    today_str = now.strftime("%B %d %Y")
-
-    # 渲染查询词
     queries = {}
     for key, tmpl in WEB_INDICATOR_QUERIES_TEMPLATE.items():
-        queries[key] = tmpl.format(year=year, month_name=month_name,
-                                    prev_month_name=prev_month_name, today_str=today_str)
+        queries[key] = tmpl.format(
+            year=year, month_name=now.strftime("%B"),
+            prev_month_name=datetime.datetime(
+                year if month > 1 else year - 1, prev_month, 1).strftime("%B"),
+            today_str=now.strftime("%B %d %Y"))
 
     result = {
-        "source": "oriosearch",
+        "source": "oriosearch",            # 对外契约不变（test/文档断言此值）
+        "source_layers": "direct+oriosearch",
         "fetched_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "total": len(queries),
         "hit": 0,
         "time_s": 0.0,
+        "search_time_s": 0.0,
         "indicators": {},
     }
 
-    # 并发发送所有请求（总耗时 ≈ 最慢的单个请求，而非 14 个之和）
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+    # 1) 直连源（含 VIX 期限结构，供分析层直接用，避免以 ticker 形式误查）
+    direct = _fetch_direct_indicators()
+    ts = {}
+    for k in ("VIX", "VIX9D", "VXN"):
+        d = direct.pop(k, None)
+        if d:
+            ts[k] = {"value": d["value"], "as_of": d["as_of"]}
+    if "VIX9D" in ts and "VIX" in ts:
+        try:
+            ts["spread_9D_minus_1M"] = round(
+                float(ts["VIX9D"]["value"]) - float(ts["VIX"]["value"]), 2)
+        except Exception:
+            pass
+    ts["note"] = "Yahoo 无 ^VIX6D；^VIX 即 1M 口径，勿以不带 ^ 的 ticker 查询"
+    result["vix_term_structure"] = ts
 
-    with ThreadPoolExecutor(max_workers=len(queries)) as executor:
-        fut_map = {}
-        for k, q in queries.items():
-            t0 = time.time()
-            fut = executor.submit(_search_oriosearch, q)
-            fut_map[fut] = (k, t0)
-        for fut in as_completed(fut_map):
-            key, t0 = fut_map[fut]
-            answer = fut.result()
-            t = time.time() - t0
-            result["time_s"] += t
+    pending = {}
+    for k, q in queries.items():
+        d = direct.get(k)
+        if d:
+            item = dict(d)
+            item["query"] = q
+            result["indicators"][k] = item
+            result["hit"] += 1
+        else:
+            pending[k] = q
 
-            if answer and _is_no_answer(answer):
-                # 有返回但属"无有效信息"模板句 → 单独标记，不计入 hit
-                val = "N/A(无有效答案)"
-                src = "no_answer"
-            elif answer:
-                result["hit"] += 1
-                val = _extract_indicator_value(answer)
-                src = "oriosearch"
-            else:
-                val = "N/A"
-                src = "失败"
+    # 2) 搜索兜底（并发，总耗时 ≈ 最慢单项）
+    if pending:
+        with ThreadPoolExecutor(max_workers=len(pending)) as executor:
+            fut_map = {}
+            for k, q in pending.items():
+                fut_map[executor.submit(_search_oriosearch, q)] = (k, time.time())
+            for fut in as_completed(fut_map):
+                key, t0 = fut_map[fut]
+                answer = fut.result()
+                dt = time.time() - t0
+                result["search_time_s"] += dt
+                if answer and _is_no_answer(answer):
+                    ok, val, src = False, "N/A(无有效答案)", "no_answer"
+                elif answer:
+                    ok, val = _validate_indicator_value(key, answer)
+                    src = "oriosearch" if ok else "no_valid_value"
+                    if not ok:
+                        val = "N/A(答案无目标数值)"
+                else:
+                    ok, val, src = False, "N/A", "失败"
+                if ok:
+                    result["hit"] += 1
+                result["indicators"][key] = {
+                    "query": pending[key],
+                    "answer": (answer or "")[:300],
+                    "value": val,
+                    "source": src,
+                    "time_s": round(dt, 2),
+                }
 
-            result["indicators"][key] = {
-                "query": queries[key],
-                "answer": (answer or "")[:300],
-                "value": val,
-                "source": src,
-                "time_s": round(t, 2),
-            }
-
-    result["time_s"] = round(result["time_s"], 2)
+    result["time_s"] = round(time.time() - t_start, 2)
+    result["search_time_s"] = round(result["search_time_s"], 2)
     return result
 
 
@@ -1843,7 +1984,7 @@ def _search_oriosearch(query):
 
 
 def _extract_indicator_value(answer):
-    """从 answer 中提取关键数值（用于展示）"""
+    """[已废弃] 会输出无单位裸数字（曾把 S&P 500 的 500 当数值）；改用 _validate_indicator_value。从 answer 中提取关键数值（用于展示）"""
     if not answer:
         return "N/A"
     # 匹配金额($X.XXT/B/M)、百分比(X.XX%)、bps、纯数字+单位
@@ -1879,21 +2020,30 @@ def _extract_indicator_value(answer):
 
 
 def _format_web_indicators_text(data: dict) -> str:
-    """格式化市场指标结果为可读文本"""
-    lines = []
-    lines.append("=== 市场指标 (OrioSearch) ===")
-    lines.append("")
-    lines.append(f"  {'指标':<15} {'来源':<12} {'耗时':<8} {'关键数值'}")
-    lines.append(f"  {'-'*15} {'-'*12} {'-'*8} {'-'*35}")
-    inds = data.get("indicators", {})
-    for key in WEB_INDICATOR_QUERIES_TEMPLATE:
-        info = inds.get(key, {})
-        src = info.get("source", "?")
-        t = info.get("time_s", 0)
-        val = info.get("value", "N/A")
-        lines.append(f"  {key:<15} {src:<12} {t:<8.2f} {val}")
-    lines.append("")
-    lines.append(f"  命中: {data['hit']}/{data['total']} | 总耗时: {data['time_s']}s")
+    """web-indicators 文本输出：标出来源层与有效性，OK=计入 hit 的真有效值"""
+    lines = ["[市场指标 web-indicators]",
+             "有效命中: %s/%s  墙钟: %ss  搜索累计: %ss" % (
+                 data.get("hit"), data.get("total"),
+                 data.get("time_s"), data.get("search_time_s"))]
+    ts = data.get("vix_term_structure") or {}
+    vals = ["%s=%s@%s" % (k, v.get("value"), str(v.get("as_of"))[:10])
+            for k, v in ts.items() if isinstance(v, dict)]
+    if vals:
+        lines.append("VIX 期限结构: " + "  ".join(vals))
+    if "spread_9D_minus_1M" in ts:
+        lines.append("  9D-1M 价差: %s（负值=近月更紧/contango 收敛）" % ts["spread_9D_minus_1M"])
+    for k, v in (data.get("indicators") or {}).items():
+        if not isinstance(v, dict):
+            continue
+        src = str(v.get("source", ""))
+        ok = src == "oriosearch" or src.startswith("direct")
+        row = "%s%-14s %-20s %s" % ("OK " if ok else "  ", k, src, str(v.get("value", ""))[:80])
+        if v.get("as_of"):
+            row += "  @" + str(v["as_of"])[:10]
+        lines.append(row)
+        ans = (v.get("answer") or "").strip().replace("\n", " ")
+        if ans and not ans.startswith("direct") and not ans.startswith("yahoo"):
+            lines.append("     " + ans[:150])
     return "\n".join(lines)
 
 
