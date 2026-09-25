@@ -2,7 +2,7 @@ r"""
 校验美股选股池数据（stock_pool.json）
 
 用法:
-    E:\veighna_studio_43\python.exe skills/tiger-stock-strategy-analysis/scripts/sync_stock_pool.py
+    python skills/tiger-stock-strategy-analysis/scripts/sync_stock_pool.py
 
 原理:
     1. 读取同目录下的 stock_pool.json（选股池数据）

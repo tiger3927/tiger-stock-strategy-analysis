@@ -1,0 +1,91 @@
+{
+  "version": "1.0",
+  "updated_at": "2026-09-26",
+  "note": "美股候选池固定入口清单与降级序（选股操作手册 §2.2/§3.1/§七 代码化）。入口按数组顺序逐个尝试，失败自动降级下一个并留痕；固定池 stock_pool.json 永远是最后兜底。",
+  "sector_alias": {
+    "AI / 科技": "信息技术",
+    "半导体": "信息技术",
+    "金融": "金融",
+    "能源": "能源",
+    "医疗": "医疗保健",
+    "消费（必需）": "必需消费",
+    "消费（可选）": "可选消费",
+    "工业": "工业",
+    "通信服务": "通信服务",
+    "公用事业": "公用事业",
+    "房地产": "房地产"
+  },
+  "sector_etfs": {
+    "AI / 科技": ["XLK", "QQQ"],
+    "半导体": ["SMH", "SOXX"],
+    "金融": ["XLF"],
+    "能源": ["XLE"],
+    "医疗": ["XLV"],
+    "消费（必需）": ["XLP"],
+    "消费（可选）": ["XLY"],
+    "工业": ["XLI"],
+    "通信服务": ["XLC"],
+    "公用事业": ["XLU"],
+    "房地产": ["XLRE"]
+  },
+  "sector_seed": {
+    "AI / 科技": {
+      "core": ["NVDA", "MSFT", "META", "GOOG", "AMZN"],
+      "satellite": ["CRM", "ORCL", "NOW", "DDOG", "MDB", "SNAP", "RDDT"]
+    },
+    "半导体": {
+      "core": ["NVDA", "AVGO", "TSM", "AMD"],
+      "satellite": ["MU", "MRVL", "CRDO", "ON", "WOLF", "ARM", "MTSI"]
+    },
+    "金融": {
+      "core": ["JPM", "GS", "BAC", "MS", "SCHW"],
+      "satellite": ["C", "MET", "PRU", "KEY", "FITB", "HBAN", "SYF"]
+    },
+    "能源": {
+      "core": ["CVX", "COP", "PSX", "EOG"],
+      "satellite": ["OXY", "FANG", "CTRA", "MRO", "CHK", "AR", "PR"]
+    },
+    "医疗": {
+      "core": ["UNH", "DHR", "TMO", "ISRG", "ZTS"],
+      "satellite": ["CNC", "ZBH", "DXCM", "PODD", "MEDP", "EXAS", "ALNY"]
+    },
+    "消费（必需）": {
+      "core": ["COST", "WMT", "DEO", "STZ"],
+      "satellite": ["CLX", "CPB", "TSCO", "CAG", "K", "SJM", "CELH"]
+    },
+    "消费（可选）": {
+      "core": ["AMZN", "NKE", "SBUX", "TJX"],
+      "satellite": ["DECK", "YUMC", "LULU", "DKS", "AEO", "BOOT", "ONON"]
+    },
+    "工业": {
+      "core": ["CAT", "HON", "GE", "RTX"],
+      "satellite": ["FAST", "CTAS", "GFF", "EMR", "ROK", "IR", "ETN"]
+    },
+    "通信服务": {
+      "core": ["META", "GOOG", "DIS", "CMCSA"],
+      "satellite": ["T", "VZ", "ROKU", "SNAP", "WBD", "NYT", "IAC"]
+    },
+    "公用事业": {
+      "core": ["NEE", "DUK", "SO", "AEP"],
+      "satellite": ["EXC", "XLU", "PEG", "ES", "ETR", "LNT", "AEE"]
+    },
+    "房地产": {
+      "core": ["PLD", "AMT", "EQIX", "WELL"],
+      "satellite": ["O", "DLR", "AVB", "EQR", "INVH", "MAA", "CUBE"]
+    }
+  },
+  "scan_entries": [
+    {"name": "sa-sp500", "type": "stockanalysis_list", "url": "https://stockanalysis.com/list/sp-500-stocks/"},
+    {"name": "sa-nasdaq100", "type": "stockanalysis_list", "url": "https://stockanalysis.com/list/nasdaq-100-stocks/"},
+    {"name": "etf-spy", "type": "stockanalysis_etf_holdings", "url": "https://stockanalysis.com/etf/spy/holdings/"},
+    {"name": "etf-mdy", "type": "stockanalysis_etf_holdings", "url": "https://stockanalysis.com/etf/mdy/holdings/"},
+    {"name": "etf-iwm", "type": "stockanalysis_etf_holdings", "url": "https://stockanalysis.com/etf/iwm/holdings/"}
+  ],
+  "small_cap_entries": [
+    {"name": "sa-smallcap", "type": "stockanalysis_list", "url": "https://stockanalysis.com/list/small-cap-stocks/"},
+    {"name": "etf-iwm", "type": "stockanalysis_etf_holdings", "url": "https://stockanalysis.com/etf/iwm/holdings/"}
+  ],
+  "probe_extra_entries": [
+    {"name": "finviz-screener", "type": "finviz_screener", "url": "https://finviz.com/screener.ashx?v=111"}
+  ]
+}

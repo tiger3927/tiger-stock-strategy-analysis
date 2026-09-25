@@ -20,8 +20,8 @@
   status       一屏管线状态（上下文压缩后恢复用）
 
 用法：
-  E:\\veighna_studio_43\\python.exe -X utf8 scripts\\rebalance_fetch.py klines
-  E:\\veighna_studio_43\\python.exe -X utf8 scripts\\rebalance_fetch.py status
+  python -X utf8 scripts/rebalance_fetch.py klines
+  python -X utf8 scripts/rebalance_fetch.py status
 
 约定文件名（与 rebalance_acceptance.py FILES 对齐，均在 --data-dir）：
   crypto_prices_raw.json / score_prices.json / score2_prices.json / live_prices.json /
@@ -38,7 +38,7 @@ from datetime import datetime, timedelta, timezone
 try:
     import requests
 except ImportError:  # pragma: no cover
-    print("ERROR: 缺少 requests 库（E:\\veighna_studio_43\\python.exe -m pip install requests）")
+    print(f"ERROR: 缺少 requests 库（{sys.executable} -m pip install requests）")
     sys.exit(1)
 
 HERE = os.path.dirname(os.path.abspath(__file__))

@@ -271,14 +271,18 @@ tiger-stock-strategy-analysis 目录下应该有本 SKILL.md，docs 目录，scr
 | 模块                             | 安装命令                                                | 用途                                             |
 | ------------------------------ | --------------------------------------------------- | ---------------------------------------------- |
 | `get_market_data.py`           | `pip install yfinance`                              | 获取结构化价格数据（含均线、52周百分位）                          |
-| `get_market_data.py`           | `pip install requests requests-cache beautifulsoup4 numpy pandas` | HTTP 请求、HTTP 响应缓存（顶层硬依赖）、HTML 解析、数值计算（ATR/CCI/支撑压力位）、DataFrame 数据处理（顶层硬依赖） |
+| `get_market_data.py`           | `pip install requests requests-cache beautifulsoup4 numpy pandas lxml` | HTTP 请求、HTTP 响应缓存（顶层硬依赖）、HTML 解析、数值计算（ATR/CCI/支撑压力位）、DataFrame 数据处理（顶层硬依赖，含 pd.read_html 所需的 lxml） |
 | `get_market_data.py`（可选）     | `pip install curl_cffi`                             | 可选：走代理直调 Yahoo chart API，替代被风控的 yfinance 内部请求；未安装自动降级 |
 | `get_market_data.py`（calendar） | `pip install -U camoufox[geoip]` + `camoufox fetch` | 必须绕过 Cloudflare 获取 ForexFactory 经济日历           |
-| `test_get_market_data.py`      | （无新增依赖，pandas/numpy 已随 `get_market_data.py` 安装）     | 测试脚本中构造模拟 DataFrame 数据                         |
+| `test_get_market_data.py`      | （无新增依赖）     | `get_market_data.py` 回归测试（构造模拟数据）                         |
 | `tools.py`                     | （纯标准库，无需安装）                                         | JSON 文件读取工具函数                                  |
 | `update_vt_symbol.py`          | （纯标准库，无需安装）                                         | 管理 vt\_symbol\_info.json：新增/修改/删除/查询品种记录（原子写入） |
 | `sync_stock_pool.py`           | （纯标准库，无需安装）                                         | 校验美股选股池数据（stock\_pool.json 结构与统计）           |
-| `refill_stock_pool_t3.py`      | （pandas / lxml 已随 `get_market_data.py` 安装）                       | 补美股选股池 T3（潜力小盘）：S&P600/400 成分 → 子板块映射 → 取数验证（支持 dry-run / --apply / --only / --per） |
+| `refill_stock_pool_t3.py`      | （无新增依赖，pandas / lxml 已随 `get_market_data.py` 安装）                       | 补美股选股池 T3（潜力小盘）：S&P600/400 成分 → 子板块映射 → 取数验证（取数间接依赖 `get_market_data.py`；支持 dry-run / --apply / --only / --per） |
+| `generate_candidate_pool.py` | （无新增依赖，`requests` 已随 `get_market_data.py` 安装；可选 `curl_cffi`，未装自动降级） | 美股候选池生成：入口抓取 + 指标取数 + 筛选与池外探测（取数间接依赖 `get_market_data.py`；支持 `--data-file` 离线 / `--no-network`） |
+| `rebalance_fetch.py` | `pip install requests`（硬依赖） | 加密货币调仓取数（币安合约 K线 / 逐笔 / 最小成交单位） |
+| `rebalance_tools.py` / `rebalance_audit.py` / `rebalance_acceptance.py` / `rebalance_x.py` | （纯标准库，无需安装） | 调仓工具链：计算与校验门（fund/gap/score/map/verify/exec）+ 源对账审计 + 一键验收 + 探索版 |
+| `sync_crypto_pool.py` | （纯标准库，无需安装） | 校验加密货币选币池数据（crypto_pool.json 结构与统计） |
 
 ***
 

@@ -1,0 +1,635 @@
+{
+  "meta": {
+    "version": "1.0",
+    "updated_at": "2026-09-24",
+    "role": "GICS 完整层级（行业组/行业/子行业）到细分 ETF 的映射，含盈透 conid。修改请保持本文件与 source 的 markdown 表格一致。",
+    "conid_note": "conid 于 2026-09-24 通过 vnpy_mcp（IB 实时 qualifyContracts）查询核实；已退市品种 XWEB、BITE 已移除，不在本文件中。",
+    "structure_note": "sectors 以一级行业 ETF 代码为键；sub_industry.independent=false 表示该子行业无独立 ETF，etfs 为替代的上层 ETF；highlight=true 对应 markdown 中的加粗重点行；etf.note 为表内附加说明。vt_symbol 按项目约定为 '<conid>.SMART'。"
+  },
+  "sectors": {
+    "XLK": {
+      "name_cn": "信息技术",
+      "name_en": "Information Technology",
+      "level1_etf": { "symbol": "XLK", "conid": 4215230 },
+      "industry_groups": [
+        {
+          "name": "软件与服务",
+          "industries": [
+            {
+              "name": "互联网软件与服务",
+              "sub_industries": [
+                { "name": "交互式媒体与服务", "independent": false, "etfs": [{ "symbol": "XLK", "conid": 4215230 }] },
+                { "name": "互联网基础设施", "independent": false, "etfs": [{ "symbol": "XLK", "conid": 4215230 }] }
+              ]
+            },
+            {
+              "name": "软件",
+              "sub_industries": [
+                { "name": "应用软件", "independent": true, "etfs": [{ "symbol": "IGV", "conid": 12658199 }, { "symbol": "XSW", "conid": 95346641 }] },
+                { "name": "系统软件", "independent": true, "etfs": [{ "symbol": "IGV", "conid": 12658199 }] },
+                { "name": "家庭娱乐软件", "independent": false, "etfs": [{ "symbol": "IGV", "conid": 12658199 }] }
+              ]
+            },
+            {
+              "name": "IT咨询与服务",
+              "sub_industries": [
+                { "name": "IT咨询", "independent": false, "etfs": [{ "symbol": "IGV", "conid": 12658199 }] },
+                { "name": "数据处理与外包", "independent": false, "etfs": [{ "symbol": "IGV", "conid": 12658199 }] }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "技术硬件与设备",
+          "industries": [
+            {
+              "name": "通信设备",
+              "sub_industries": [
+                { "name": "通信设备", "independent": false, "etfs": [{ "symbol": "XLK", "conid": 4215230 }] }
+              ]
+            },
+            {
+              "name": "电脑硬件",
+              "sub_industries": [
+                { "name": "电脑硬件", "independent": false, "etfs": [{ "symbol": "XLK", "conid": 4215230 }] }
+              ]
+            },
+            {
+              "name": "电子设备仪器",
+              "sub_industries": [
+                { "name": "电子元件", "independent": false, "etfs": [{ "symbol": "XLK", "conid": 4215230 }] },
+                { "name": "电子制造服务", "independent": false, "etfs": [{ "symbol": "XLK", "conid": 4215230 }] }
+              ]
+            },
+            {
+              "name": "办公电子",
+              "sub_industries": [
+                { "name": "办公设备", "independent": false, "etfs": [{ "symbol": "XLK", "conid": 4215230 }] }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "半导体",
+          "industries": [
+            {
+              "name": "半导体与设备",
+              "sub_industries": [
+                { "name": "半导体", "independent": true, "highlight": true, "etfs": [{ "symbol": "SOXX", "conid": 12658194 }, { "symbol": "XSD", "conid": 45540808 }] },
+                { "name": "半导体设备", "independent": true, "etfs": [{ "symbol": "SOXX", "conid": 12658194 }] }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "XLV": {
+      "name_cn": "医疗保健",
+      "name_en": "Health Care",
+      "level1_etf": { "symbol": "XLV", "conid": 4215205 },
+      "industry_groups": [
+        {
+          "name": "设备与服务",
+          "industries": [
+            {
+              "name": "医疗保健设备",
+              "sub_industries": [
+                { "name": "医疗设备", "independent": true, "etfs": [{ "symbol": "IHI", "conid": 39046985 }, { "symbol": "XHE", "conid": 83434867 }] },
+                { "name": "医疗用品", "independent": true, "etfs": [{ "symbol": "XHE", "conid": 83434867 }] }
+              ]
+            },
+            {
+              "name": "医疗保健服务",
+              "sub_industries": [
+                { "name": "医院/诊所", "independent": true, "etfs": [{ "symbol": "XHS", "conid": 95346639 }] },
+                { "name": "医保管理机构", "independent": true, "etfs": [{ "symbol": "XHS", "conid": 95346639 }] },
+                { "name": "医疗外包服务", "independent": false, "etfs": [{ "symbol": "XHS", "conid": 95346639 }] }
+              ]
+            },
+            {
+              "name": "医疗保健技术",
+              "sub_industries": [
+                { "name": "医疗信息技术", "independent": false, "etfs": [{ "symbol": "XLV", "conid": 4215205 }] }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "制药生物",
+          "industries": [
+            {
+              "name": "生物科技",
+              "sub_industries": [
+                { "name": "生物科技", "independent": true, "highlight": true, "etfs": [{ "symbol": "IBB", "conid": 11517520 }, { "symbol": "XBI", "conid": 45540828 }] }
+              ]
+            },
+            {
+              "name": "制药",
+              "sub_industries": [
+                { "name": "制药", "independent": true, "etfs": [{ "symbol": "IHE", "conid": 39046979 }, { "symbol": "XPH", "conid": 45540802 }] }
+              ]
+            },
+            {
+              "name": "生命科学工具",
+              "sub_industries": [
+                { "name": "实验室耗材/检测", "independent": false, "etfs": [{ "symbol": "XLV", "conid": 4215205 }] }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "XLY": {
+      "name_cn": "可选消费",
+      "name_en": "Consumer Discretionary",
+      "level1_etf": { "symbol": "XLY", "conid": 4215215 },
+      "industry_groups": [
+        {
+          "name": "汽车",
+          "industries": [
+            {
+              "name": "汽车",
+              "sub_industries": [
+                { "name": "乘用车", "independent": true, "etfs": [{ "symbol": "CARZ", "conid": 87880199 }] },
+                { "name": "商用车", "independent": false, "etfs": [{ "symbol": "CARZ", "conid": 87880199 }] }
+              ]
+            },
+            {
+              "name": "汽车零部件",
+              "sub_industries": [
+                { "name": "汽车配件", "independent": false, "etfs": [{ "symbol": "CARZ", "conid": 87880199 }] }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "耐用消费品",
+          "industries": [
+            {
+              "name": "家用耐用消费品",
+              "sub_industries": [
+                { "name": "家用电器", "independent": false, "etfs": [{ "symbol": "XLY", "conid": 4215215 }] },
+                { "name": "家居用品", "independent": false, "etfs": [{ "symbol": "XLY", "conid": 4215215 }] }
+              ]
+            },
+            {
+              "name": "休闲产品",
+              "sub_industries": [
+                { "name": "休闲产品", "independent": true, "etfs": [{ "symbol": "PEJ", "conid": 319356972 }] }
+              ]
+            },
+            {
+              "name": "服装鞋帽",
+              "sub_industries": [
+                { "name": "服装/鞋", "independent": true, "etfs": [{ "symbol": "XRT", "conid": 45540784 }, { "symbol": "KTB", "conid": 363803376 }] }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "零售",
+          "industries": [
+            {
+              "name": "专营零售",
+              "sub_industries": [
+                { "name": "专营零售", "independent": true, "etfs": [{ "symbol": "XRT", "conid": 45540784 }] }
+              ]
+            },
+            {
+              "name": "互联网零售",
+              "sub_industries": [
+                { "name": "互联网零售", "independent": true, "etfs": [{ "symbol": "XRT", "conid": 45540784 }, { "symbol": "ONLN", "conid": 325910389 }] }
+              ]
+            },
+            {
+              "name": "百货",
+              "sub_industries": [
+                { "name": "百货", "independent": true, "etfs": [{ "symbol": "XRT", "conid": 45540784 }] }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "消费者服务",
+          "industries": [
+            {
+              "name": "餐饮",
+              "sub_industries": [
+                { "name": "餐饮", "independent": true, "etfs": [{ "symbol": "PEJ", "conid": 319356972 }] }
+              ]
+            },
+            {
+              "name": "酒店度假",
+              "sub_industries": [
+                { "name": "酒店/度假", "independent": true, "etfs": [{ "symbol": "PEJ", "conid": 319356972 }] }
+              ]
+            },
+            {
+              "name": "娱乐",
+              "sub_industries": [
+                { "name": "娱乐", "independent": true, "etfs": [{ "symbol": "PEJ", "conid": 319356972 }] }
+              ]
+            },
+            {
+              "name": "教育服务",
+              "sub_industries": [
+                { "name": "教育", "independent": false, "etfs": [{ "symbol": "XLY", "conid": 4215215 }] }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "XLP": {
+      "name_cn": "必需消费",
+      "name_en": "Consumer Staples",
+      "level1_etf": { "symbol": "XLP", "conid": 4215210 },
+      "industry_groups": [
+        {
+          "name": "食品饮料烟草",
+          "industries": [
+            {
+              "name": "饮料",
+              "sub_industries": [
+                { "name": "软饮料", "independent": false, "etfs": [{ "symbol": "XLP", "conid": 4215210 }] },
+                { "name": "酒类", "independent": false, "etfs": [{ "symbol": "XLP", "conid": 4215210 }] }
+              ]
+            },
+            {
+              "name": "食品",
+              "sub_industries": [
+                { "name": "农产品", "independent": false, "etfs": [{ "symbol": "XLP", "conid": 4215210 }] },
+                { "name": "包装食品/肉类", "independent": true, "etfs": [{ "symbol": "PBJ", "conid": 319356963 }, { "symbol": "FTXG", "conid": 248755965 }] }
+              ]
+            },
+            {
+              "name": "烟草",
+              "sub_industries": [
+                { "name": "烟草", "independent": false, "etfs": [{ "symbol": "XLP", "conid": 4215210 }] }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "家庭与个人用品",
+          "industries": [
+            {
+              "name": "家庭用品",
+              "sub_industries": [
+                { "name": "家庭用品", "independent": false, "etfs": [{ "symbol": "XLP", "conid": 4215210 }] }
+              ]
+            },
+            {
+              "name": "个人用品",
+              "sub_industries": [
+                { "name": "个人护理用品", "independent": false, "etfs": [{ "symbol": "XLP", "conid": 4215210 }] }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "食品零售",
+          "industries": [
+            {
+              "name": "食品零售",
+              "sub_industries": [
+                { "name": "食品零售", "independent": false, "etfs": [{ "symbol": "XLP", "conid": 4215210 }] }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "XLE": {
+      "name_cn": "能源",
+      "name_en": "Energy",
+      "level1_etf": { "symbol": "XLE", "conid": 4215217 },
+      "industry_groups": [
+        {
+          "name": "能源",
+          "industries": [
+            {
+              "name": "能源设备与服务",
+              "sub_industries": [
+                { "name": "油气设备与服务", "independent": true, "highlight": true, "etfs": [{ "symbol": "XES", "conid": 413951493 }, { "symbol": "OIH", "conid": 415578515 }] }
+              ]
+            },
+            {
+              "name": "石油天然气",
+              "sub_industries": [
+                { "name": "油气勘探生产", "independent": true, "etfs": [{ "symbol": "IEO", "conid": 39046971 }, { "symbol": "XOP", "conid": 413951498 }] },
+                { "name": "综合油气", "independent": false, "etfs": [{ "symbol": "XLE", "conid": 4215217 }] },
+                { "name": "储运", "independent": false, "etfs": [{ "symbol": "XLE", "conid": 4215217 }] },
+                { "name": "炼油营销", "independent": false, "etfs": [{ "symbol": "XLE", "conid": 4215217 }] },
+                { "name": "油气钻井", "independent": false, "etfs": [{ "symbol": "XES", "conid": 413951493 }] }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "XLI": {
+      "name_cn": "工业",
+      "name_en": "Industrials",
+      "level1_etf": { "symbol": "XLI", "conid": 4215227 },
+      "industry_groups": [
+        {
+          "name": "资本货物",
+          "industries": [
+            {
+              "name": "航空航天军工",
+              "sub_industries": [
+                { "name": "航空航天军工", "independent": true, "highlight": true, "etfs": [{ "symbol": "ITA", "conid": 39046959 }] }
+              ]
+            },
+            {
+              "name": "建筑产品",
+              "sub_industries": [
+                { "name": "建筑产品", "independent": false, "etfs": [{ "symbol": "XLI", "conid": 4215227 }] }
+              ]
+            },
+            {
+              "name": "建筑与工程",
+              "sub_industries": [
+                { "name": "建筑/工程", "independent": false, "etfs": [{ "symbol": "XLI", "conid": 4215227 }] }
+              ]
+            },
+            {
+              "name": "电气设备",
+              "sub_industries": [
+                { "name": "电气设备", "independent": false, "etfs": [{ "symbol": "XLI", "conid": 4215227 }] }
+              ]
+            },
+            {
+              "name": "工业集团",
+              "sub_industries": [
+                { "name": "工业集团", "independent": false, "etfs": [{ "symbol": "XLI", "conid": 4215227 }] }
+              ]
+            },
+            {
+              "name": "机械",
+              "sub_industries": [
+                { "name": "机械", "independent": false, "etfs": [{ "symbol": "XLI", "conid": 4215227 }] }
+              ]
+            },
+            {
+              "name": "贸易公司经销",
+              "sub_industries": [
+                { "name": "贸易经销", "independent": false, "etfs": [{ "symbol": "XLI", "conid": 4215227 }] }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "运输",
+          "industries": [
+            {
+              "name": "航空物流",
+              "sub_industries": [
+                { "name": "航空", "independent": true, "etfs": [{ "symbol": "IYT", "conid": 26337175 }] },
+                { "name": "货运物流", "independent": true, "etfs": [{ "symbol": "IYT", "conid": 26337175 }] }
+              ]
+            },
+            {
+              "name": "海运",
+              "sub_industries": [
+                { "name": "海运", "independent": true, "etfs": [{ "symbol": "SEA", "conid": 539070022 }] }
+              ]
+            },
+            {
+              "name": "公路铁路",
+              "sub_industries": [
+                { "name": "铁路", "independent": true, "etfs": [{ "symbol": "IYT", "conid": 26337175 }] },
+                { "name": "卡车运输", "independent": true, "etfs": [{ "symbol": "IYT", "conid": 26337175 }] }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "商业服务",
+          "industries": [
+            {
+              "name": "专业服务",
+              "sub_industries": [
+                { "name": "调查咨询", "independent": false, "etfs": [{ "symbol": "XLI", "conid": 4215227 }] },
+                { "name": "人力就业服务", "independent": false, "etfs": [{ "symbol": "XLI", "conid": 4215227 }] },
+                { "name": "商业印刷", "independent": false, "etfs": [{ "symbol": "XLI", "conid": 4215227 }] }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "XLB": {
+      "name_cn": "基础材料",
+      "name_en": "Materials",
+      "level1_etf": { "symbol": "XLB", "conid": 4215200 },
+      "industry_groups": [
+        {
+          "name": "材料",
+          "industries": [
+            {
+              "name": "化学",
+              "sub_industries": [
+                { "name": "特种化学品", "independent": true, "etfs": [{ "symbol": "XLB", "conid": 4215200 }] },
+                { "name": "化工/农化", "independent": true, "etfs": [{ "symbol": "XLB", "conid": 4215200 }] },
+                { "name": "日用化学", "independent": true, "etfs": [{ "symbol": "XLB", "conid": 4215200 }] }
+              ]
+            },
+            {
+              "name": "建筑材料",
+              "sub_industries": [
+                { "name": "建材", "independent": false, "etfs": [{ "symbol": "XLB", "conid": 4215200 }] }
+              ]
+            },
+            {
+              "name": "容器包装",
+              "sub_industries": [
+                { "name": "容器包装", "independent": false, "etfs": [{ "symbol": "XLB", "conid": 4215200 }] }
+              ]
+            },
+            {
+              "name": "金属矿业",
+              "sub_industries": [
+                { "name": "铜/黄金/综合矿业", "independent": true, "highlight": true, "etfs": [{ "symbol": "XME", "conid": 45540699 }, { "symbol": "COPX", "conid": 211651700 }, { "symbol": "GDX", "conid": 229726316 }] },
+                { "name": "钢铁", "independent": true, "etfs": [{ "symbol": "SLX", "conid": 229726273 }] },
+                { "name": "铝", "independent": false, "etfs": [{ "symbol": "XME", "conid": 45540699 }] }
+              ]
+            },
+            {
+              "name": "纸材林产品",
+              "sub_industries": [
+                { "name": "纸材林产品", "independent": true, "etfs": [{ "symbol": "CUT", "conid": 319357059, "note": "木材" }] }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "XLF": {
+      "name_cn": "金融",
+      "name_en": "Financials",
+      "level1_etf": { "symbol": "XLF", "conid": 4215220 },
+      "industry_groups": [
+        {
+          "name": "银行",
+          "industries": [
+            {
+              "name": "银行",
+              "sub_industries": [
+                { "name": "多元银行", "independent": true, "etfs": [{ "symbol": "KBE", "conid": 45540769 }] },
+                { "name": "区域银行", "independent": true, "etfs": [{ "symbol": "KRE", "conid": 45540822 }] }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "金融服务",
+          "industries": [
+            {
+              "name": "金融服务",
+              "sub_industries": [
+                { "name": "资本市场", "independent": false, "etfs": [{ "symbol": "XLF", "conid": 4215220 }] },
+                { "name": "金融交易所与数据", "independent": false, "etfs": [{ "symbol": "XLF", "conid": 4215220 }] },
+                { "name": "抵押贷款金融", "independent": false, "etfs": [{ "symbol": "XLF", "conid": 4215220 }] },
+                { "name": "消费金融", "independent": false, "etfs": [{ "symbol": "XLF", "conid": 4215220 }] },
+                { "name": "资产管理", "independent": false, "etfs": [{ "symbol": "XLF", "conid": 4215220 }] }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "保险",
+          "industries": [
+            {
+              "name": "保险",
+              "sub_industries": [
+                { "name": "多元化保险", "independent": true, "etfs": [{ "symbol": "KIE", "conid": 45540872 }] },
+                { "name": "人寿保险", "independent": true, "etfs": [{ "symbol": "KIE", "conid": 45540872 }] },
+                { "name": "财险意外险", "independent": true, "etfs": [{ "symbol": "KIE", "conid": 45540872 }] },
+                { "name": "再保险", "independent": true, "etfs": [{ "symbol": "KIE", "conid": 45540872 }] }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "XLU": {
+      "name_cn": "公用事业",
+      "name_en": "Utilities",
+      "level1_etf": { "symbol": "XLU", "conid": 4215235 },
+      "industry_groups": [
+        {
+          "name": "公用事业",
+          "industries": [
+            {
+              "name": "电力公用事业",
+              "sub_industries": [
+                { "name": "电力发电", "independent": true, "etfs": [{ "symbol": "XLU", "conid": 4215235 }, { "symbol": "VPU", "conid": 27638088 }] }
+              ]
+            },
+            {
+              "name": "燃气公用事业",
+              "sub_industries": [
+                { "name": "燃气", "independent": true, "etfs": [{ "symbol": "XLU", "conid": 4215235 }] }
+              ]
+            },
+            {
+              "name": "水务公用事业",
+              "sub_industries": [
+                { "name": "水务", "independent": true, "etfs": [{ "symbol": "PHO", "conid": 320227626 }, { "symbol": "FIW", "conid": 44000309 }] }
+              ]
+            },
+            {
+              "name": "独立电力",
+              "sub_industries": [
+                { "name": "独立电力发电商", "independent": true, "etfs": [{ "symbol": "PAVE", "conid": 268960148, "note": "基建，交叉" }] }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "XLRE": {
+      "name_cn": "房地产",
+      "name_en": "Real Estate",
+      "level1_etf": { "symbol": "XLRE", "conid": 209048377 },
+      "industry_groups": [
+        {
+          "name": "房地产",
+          "industries": [
+            {
+              "name": "房地产管理开发",
+              "sub_industries": [
+                { "name": "房地产管理开发", "independent": false, "etfs": [{ "symbol": "XLRE", "conid": 209048377 }] }
+              ]
+            },
+            {
+              "name": "房地产投资信托REITs",
+              "sub_industries": [
+                { "name": "多元化REITs", "independent": true, "highlight": true, "etfs": [{ "symbol": "VNQ", "conid": 31230302 }, { "symbol": "XLRE", "conid": 209048377 }] }
+              ]
+            },
+            {
+              "name": "REITs",
+              "sub_industries": [
+                { "name": "住宅REITs", "independent": true, "etfs": [{ "symbol": "VNQ", "conid": 31230302 }] },
+                { "name": "工业REITs", "independent": true, "etfs": [{ "symbol": "VNQ", "conid": 31230302 }] },
+                { "name": "零售REITs", "independent": true, "etfs": [{ "symbol": "VNQ", "conid": 31230302 }] },
+                { "name": "数据中心REITs", "independent": false, "etfs": [{ "symbol": "VNQ", "conid": 31230302 }] },
+                { "name": "医疗REITs", "independent": false, "etfs": [{ "symbol": "VNQ", "conid": 31230302 }] }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "XLC": {
+      "name_cn": "通信服务",
+      "name_en": "Communication Services",
+      "level1_etf": { "symbol": "XLC", "conid": 322317077 },
+      "industry_groups": [
+        {
+          "name": "电信",
+          "industries": [
+            {
+              "name": "综合电信",
+              "sub_industries": [
+                { "name": "综合电信", "independent": true, "etfs": [{ "symbol": "XTL", "conid": 83434870 }] }
+              ]
+            },
+            {
+              "name": "无线电信",
+              "sub_industries": [
+                { "name": "无线电信", "independent": true, "etfs": [{ "symbol": "XTL", "conid": 83434870 }] }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "媒体娱乐",
+          "industries": [
+            {
+              "name": "媒体",
+              "sub_industries": [
+                { "name": "广告/有线电视/出版", "independent": true, "etfs": [{ "symbol": "XLC", "conid": 322317077 }] }
+              ]
+            },
+            {
+              "name": "娱乐",
+              "sub_industries": [
+                { "name": "电影娱乐/游戏", "independent": true, "etfs": [{ "symbol": "XLC", "conid": 322317077 }, { "symbol": "BETZ", "conid": 425242708, "note": "博彩" }] }
+              ]
+            },
+            {
+              "name": "互动媒体服务",
+              "sub_industries": [
+                { "name": "互动媒体", "independent": true, "etfs": [{ "symbol": "XLC", "conid": 322317077 }] }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

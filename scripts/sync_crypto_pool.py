@@ -2,7 +2,7 @@
 校验加密货币选币池数据（crypto_pool.json）
 
 用法:
-    E:\\veighna_studio_43\\python.exe skills/tiger-stock-strategy-analysis/scripts/sync_crypto_pool.py
+    python skills/tiger-stock-strategy-analysis/scripts/sync_crypto_pool.py
 
 原理:
     1. 读取同目录下的 crypto_pool.json（选币池数据）
