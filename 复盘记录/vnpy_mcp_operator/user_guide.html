@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TKT · 操作指南（使用说明）</title>
+<style>
+:root{
+  --bg:#0a0e17; --bg2:#111827; --card:#151d2e; --card2:#1a2338;
+  --line:#26324a; --line2:#33405e;
+  --txt:#e5eaf3; --sub:#94a3b8; --dim:#64748b;
+  --blue:#3b82f6; --cyan:#22d3ee; --teal:#10b981; --amber:#f59e0b; --red:#ef4444; --purple:#8b5cf6; --pink:#ec4899;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+/* 只给 html 加 overflow-x：加在 body 上会让 body 变成滚动容器，
+   破坏 .topbar 的 position:sticky（手机模式下滚动后吸顶栏会消失） */
+html{overflow-x:hidden;scroll-behavior:smooth}
+body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.7;font-size:15px}
+a{color:var(--cyan);text-decoration:none}
+
+/* ===== 侧边导航 ===== */
+.sidebar{position:fixed;left:0;top:0;bottom:0;width:232px;background:var(--bg2);border-right:1px solid var(--line);padding:24px 0;overflow-y:auto;z-index:50}
+.sidebar .logo{position:relative;padding:0 22px 18px;border-bottom:1px solid var(--line);margin-bottom:14px}
+.drawer-close{display:none;position:absolute;top:16px;right:16px;width:32px;height:32px;border-radius:8px;background:var(--card);border:1px solid var(--line2);color:var(--sub);font-size:14px;cursor:pointer;line-height:1}
+.drawer-close:hover{color:var(--txt);border-color:var(--cyan)}
+.sidebar .logo .dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--teal);box-shadow:0 0 12px var(--teal);margin-right:8px;vertical-align:middle}
+.sidebar .logo b{font-size:15px;letter-spacing:.5px}
+.sidebar .logo small{display:block;color:var(--dim);font-size:11px;margin-top:4px}
+.sidebar nav a{display:flex;align-items:center;gap:10px;padding:9px 22px;color:var(--sub);font-size:13.5px;border-left:2px solid transparent;transition:.15s}
+.sidebar nav a:hover{color:var(--txt);background:rgba(59,130,246,.08)}
+.sidebar nav a.on{color:var(--cyan);border-left-color:var(--cyan);background:rgba(34,211,238,.06)}
+.sidebar nav a .n{width:22px;height:22px;border-radius:6px;background:var(--card);border:1px solid var(--line2);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--dim);flex-shrink:0}
+.sidebar nav a.on .n{background:rgba(34,211,238,.15);border-color:var(--cyan);color:var(--cyan)}
+
+/* ===== 主区 ===== */
+.main{margin-left:232px;padding:0 48px 80px;max-width:1080px}
+section{padding:56px 0 12px;scroll-margin-top:20px}
+.sec-tag{display:inline-block;font-size:11.5px;letter-spacing:2px;color:var(--cyan);background:rgba(34,211,238,.08);border:1px solid rgba(34,211,238,.25);padding:3px 12px;border-radius:99px;margin-bottom:12px}
+h2{font-size:26px;font-weight:700;margin-bottom:8px;letter-spacing:.3px}
+.sec-desc{color:var(--sub);font-size:14.5px;margin-bottom:28px;max-width:760px}
+h3{font-size:17px;font-weight:600;margin:26px 0 12px;color:var(--txt)}
+.sub3{color:var(--sub);font-size:13px;margin:-6px 0 14px}
+
+/* ===== 卡片 ===== */
+.grid{display:grid;gap:14px}
+.grid>*{min-width:0}
+.g3{grid-template-columns:repeat(3,1fr)}
+.g2{grid-template-columns:repeat(2,1fr)}
+.g4{grid-template-columns:repeat(4,1fr)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;transition:.18s}
+.card:hover{border-color:var(--line2);transform:translateY(-2px)}
+.card .ic{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;margin-bottom:10px}
+.card h4{font-size:15px;margin-bottom:6px}
+.card p{font-size:13px;color:var(--sub)}
+.b-blue{background:rgba(59,130,246,.15)} .b-cyan{background:rgba(34,211,238,.13)} .b-teal{background:rgba(16,185,129,.14)}
+.b-amber{background:rgba(245,158,11,.14)} .b-red{background:rgba(239,68,68,.13)} .b-purple{background:rgba(139,92,246,.14)} .b-pink{background:rgba(236,72,153,.13)}
+
+/* ===== 表格 ===== */
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:560px}
+th{background:var(--card2);color:var(--sub);font-weight:600;text-align:left;padding:11px 16px;font-size:12.5px;letter-spacing:.4px;border-bottom:1px solid var(--line2)}
+td{padding:11px 16px;border-bottom:1px solid var(--line);color:var(--sub);vertical-align:top}
+tr:last-child td{border-bottom:none}
+td b,td strong{color:var(--txt)}
+td .mono{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--cyan);background:rgba(34,211,238,.07);padding:1px 6px;border-radius:4px;white-space:nowrap}
+
+/* ===== 代码块 ===== */
+pre{background:#0d1424;border:1px solid var(--line);border-radius:10px;padding:16px 18px;overflow-x:auto;font-size:12.5px;line-height:1.7;color:#c9d6ee;font-family:ui-monospace,Consolas,monospace}
+pre .c{color:#5b6b8c} pre .k{color:#7dd3fc} pre .s{color:#86efac} pre .f{color:#f0abfc} pre .n{color:#fdba74}
+code{font-family:ui-monospace,Consolas,monospace}
+
+/* ===== 步骤 / 时间线 ===== */
+.steps{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
+.steps>.step{min-width:0}
+.step{flex:1;min-width:150px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;position:relative}
+.step .no{position:absolute;top:-9px;left:14px;font-size:10.5px;font-weight:700;color:var(--bg);background:var(--cyan);padding:1px 8px;border-radius:99px}
+.step h5{font-size:13.5px;margin-bottom:4px}
+.step p{font-size:12px;color:var(--sub)}
+
+/* ===== 高亮标签 ===== */
+.pill{display:inline-block;font-size:11px;padding:2px 9px;border-radius:99px;margin-right:6px;font-weight:600}
+.p-p0{background:rgba(239,68,68,.15);color:#fca5a5;border:1px solid rgba(239,68,68,.35)}
+.p-p1{background:rgba(245,158,11,.14);color:#fcd34d;border:1px solid rgba(245,158,11,.32)}
+.p-p2{background:rgba(148,163,184,.12);color:#cbd5e1;border:1px solid rgba(148,163,184,.3)}
+.p-ok{background:rgba(16,185,129,.14);color:#6ee7b7;border:1px solid rgba(16,185,129,.32)}
+.p-todo{background:rgba(100,116,139,.14);color:#94a3b8;border:1px solid rgba(148,163,184,.35)}
+
+/* ===== 待编写块（骨架占位） ===== */
+.todo{border:1px dashed var(--line2);border-radius:12px;padding:20px;margin:14px 0;background:rgba(17,24,39,.4)}
+.todo ul{margin:10px 0 0 18px}
+.todo li{font-size:13px;color:var(--sub);margin-bottom:5px}
+.todo li::marker{color:var(--dim)}
+
+/* ===== 实拍图（图 + 图注） ===== */
+.img-banner{background:var(--card2);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin:14px 0}
+.img-banner img{display:block;width:100%;height:auto;background:#0b1727}
+.img-banner .cap{padding:10px 14px;font-size:12.5px;color:var(--sub);border-top:1px solid var(--line)}
+.img-banner .cap b{color:var(--txt)}
+
+/* ===== 查看样张按钮 ===== */
+.btn-sample{font-size:12px;font-weight:600;color:var(--cyan);background:rgba(34,211,238,.1);border:1px solid rgba(34,211,238,.35);border-radius:99px;padding:4px 14px;cursor:pointer;white-space:nowrap;transition:.15s;display:inline-block}
+.btn-sample:hover{background:rgba(34,211,238,.22);border-color:var(--cyan)}
+
+/* ===== Hero ===== */
+.hero{padding:64px 0 36px;border-bottom:1px solid var(--line);margin-bottom:8px}
+.hero .glow{font-size:13.5px;color:var(--cyan);letter-spacing:1px;margin-bottom:12px;line-height:1.9;max-width:860px}
+.hero h1{font-size:38px;font-weight:800;letter-spacing:.5px;background:linear-gradient(120deg,#e2e8f0,#7dd3fc 55%,#34d399);-webkit-background-clip:text;background-clip:text;color:transparent;margin-bottom:12px}
+.hero p{color:var(--sub);font-size:16px;max-width:760px}
+.hero .chips{margin-top:20px;display:flex;gap:10px;flex-wrap:wrap}
+.hero .chip{font-size:12.5px;padding:7px 16px;border-radius:99px;border:1px solid var(--line2);color:var(--sub);background:var(--card)}
+.hero .chip b{color:var(--txt)}
+
+/* ===== Footer ===== */
+footer{margin-top:60px;padding:26px 0;border-top:1px solid var(--line);color:var(--dim);font-size:12.5px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
+
+/* ===== 移动端：吸顶栏 + 目录抽屉 ===== */
+.topbar{display:none}
+.menu-btn{width:42px;height:42px;border-radius:10px;background:var(--card);border:1px solid var(--line2);cursor:pointer;align-items:center;justify-content:center;flex-direction:column;gap:4px;flex-shrink:0}
+.menu-btn i{display:block;width:18px;height:2px;background:var(--cyan);border-radius:2px;transition:.2s}
+.menu-btn.open i:nth-child(1){transform:translateY(6px) rotate(45deg)}
+.menu-btn.open i:nth-child(2){opacity:0}
+.menu-btn.open i:nth-child(3){transform:translateY(-6px) rotate(-45deg)}
+.scrim{display:none;position:fixed;inset:0;background:rgba(5,8,14,.6);z-index:45;backdrop-filter:blur(2px)}
+.scrim.show{display:block}
+
+@media(max-width:960px){
+  /* 吸顶栏用 sticky（不用 fixed）：部分手机浏览器 fixed 元素滚动时会漂移出视口 */
+  .topbar{position:sticky;top:0;z-index:60;display:flex;align-items:center;gap:12px;padding:10px 14px;background:rgba(10,14,23,.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+  .topbar .tb-title{font-size:14px;font-weight:700;color:var(--txt);letter-spacing:.5px;line-height:1.3;overflow:hidden}
+  .topbar .tb-title small{display:block;font-size:10px;color:var(--dim);font-weight:400;letter-spacing:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .drawer-close{display:block}
+  /* 抽屉打开时锁住 body 滚动，防止内容跟着滚 */
+  body.drawer-open{overflow:hidden}
+  .sidebar{transform:translateX(-100%);transition:transform .25s ease;box-shadow:8px 0 30px rgba(0,0,0,.4);padding-top:72px}
+  .sidebar.open{transform:translateX(0)}
+  .main{margin-left:0;padding:16px 16px 60px;max-width:100%}
+  /* 窄屏全部改单列：双列卡片内含代码块/长英文，分两列会被撑宽页面 */
+  .g2,.g3,.g4{grid-template-columns:1fr}
+  .steps{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;gap:8px;padding-bottom:6px}
+  .steps>.step{flex:0 0 auto;width:170px;min-width:0}
+  .card,.step{max-width:100%}
+  pre{font-size:11.5px;padding:12px 14px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .hero h1{font-size:24px}
+  .hero{padding:20px 0 30px}
+  section{padding:40px 0 10px}
+}
+</style>
+</head>
+<body>
+
+<!-- ===== 移动端吸顶栏：目录按钮（sticky，滚动不掉） ===== -->
+<div class="topbar">
+  <button class="menu-btn" id="menuBtn" aria-label="打开目录"><i></i><i></i><i></i></button>
+  <div class="tb-title">TKT 量化交易系统<small>操作指南 · 使用说明</small></div>
+</div>
+<div class="scrim" id="scrim"></div>
+
+<!-- ===== 侧边导航 ===== -->
+<aside class="sidebar" id="sidebar">
+  <div class="logo">
+    <span class="dot"></span><b>TKT 量化交易系统</b>
+    <small>操作指南 · 使用说明</small>
+    <button class="drawer-close" id="drawerClose" aria-label="收起目录">✕</button>
+  </div>
+  <nav>
+    <a href="#top" class="on"><span class="n">00</span>指南</a>
+    <a href="#install"><span class="n">01</span>安装与部署</a>
+    <a href="#steps"><span class="n">02</span>使用说明·操作步骤</a>
+    <a href="#faq"><span class="n">03</span>常见问题</a>
+  </nav>
+</aside>
+
+<!-- ===== 主内容 ===== -->
+<div class="main">
+
+  <!-- HERO -->
+  <div class="hero" id="top">
+    <h1>TKT 量化交易系统 <span style="font-size:.55em;font-weight:600;letter-spacing:2px;color:var(--cyan)">操作指南</span></h1>
+    <p>本指南是「使用说明」：安装完成后，按 6 步实操流程（配实拍图）走一遍，即可完成系统启动、策略建立与运行、AI 自动化任务配置。系统总览与架构原理见 <a href="index.html">系统介绍（index.html）</a>。</p>
+    <div class="chips">
+      <span class="chip">状态 <b>编写中</b></span>
+      <span class="chip">覆盖 <b>安装 → 6 步实操 → AI 任务</b></span>
+      <span class="chip">分析引擎 <b>openclaw / goose</b></span>
+      <span class="chip">系统介绍 <b><a href="index.html">index.html</a></b></span>
+    </div>
+    <a href="index.html" class="btn-sample" style="margin-top:22px;padding:8px 22px;font-size:13.5px">← 返回系统介绍</a>
+  </div>
+
+  <!-- 01 安装与部署 -->
+  <section id="install">
+    <span class="sec-tag">PART 01</span>
+    <h2>安装与部署</h2>
+    <p class="sec-desc">联系 TKT 团队获取安装链接地址，然后二选一：智能体工具自动化安装，或下载安装包手动逐步设置。</p>
+    <div class="card" style="border-left:3px solid var(--cyan);background:rgba(34,211,238,.04)">
+      <h4 style="color:var(--cyan);margin-bottom:8px">📥 安装方式</h4>
+      <p style="font-size:14px;color:var(--sub);margin-bottom:12px">先<b style="color:var(--txt)">联系 TKT 团队</b>，获取<b style="color:var(--txt)">安装链接地址</b>，再任选一种方式：</p>
+      <div class="steps" style="margin:0">
+        <div class="step"><span class="no">方式一</span><h5>智能体自动化安装</h5><p>用 codex / workbuddy 等智能体工具，把安装指南交给它们，全自动执行安装</p></div>
+        <div class="step"><span class="no">方式二</span><h5>安装包逐步安装</h5><p>下载安装包，执行 <code>setup.exe</code>，按提示逐步设置安装</p></div>
+      </div>
+    </div>
+    <h3>分市场前置条件</h3>
+    <div class="grid g2">
+      <div class="card"><div class="ic b-blue">🌐</div><h4>全球股市与期货</h4><p>美股 / 港股 / 日股 / 韩股等全球股市和期货，需前置安装 IB Gateway 软件，在盈透证券官网下载（需要开设盈透账号）。</p></div>
+      <div class="card"><div class="ic b-cyan">🇨🇳</div><h4>中国A股</h4><p>需联系开户的证券公司获取迅投软件（本系统可通过迅投实现交易）。</p></div>
+      <div class="card"><div class="ic b-teal">📊</div><h4>中国期货</h4><p>需联系期货公司申请期货程序化交易权限，并获取程序化交易设置参数。</p></div>
+      <div class="card"><div class="ic b-purple">₿</div><h4>加密货币</h4><p>需在 binance 币安开设账户，并设置到 api-token。</p></div>
+    </div>
+    <div class="card" style="margin-top:14px;border-left:3px solid var(--amber)">
+      <p style="font-size:13px;color:var(--sub)"><b style="color:var(--amber)">支持系统：</b>目前支持 <b style="color:var(--txt)">Windows</b> 系统，计划支持 MacOS / Ubuntu 系统。</p>
+    </div>
+  </section>
+
+  <!-- 02 使用说明 · 操作步骤 -->
+  <section id="steps">
+    <span class="sec-tag">PART 02</span>
+    <h2>使用说明 · 操作步骤</h2>
+    <p class="sec-desc">安装完成后的实际使用流程，共 6 步：启动系统 → 连接网关 → 检查设置 → 建立策略 → 策略运行 → AI 自动化任务。全部配实拍图，照着做即可。</p>
+
+    <h3>启动系统</h3>
+    <p class="sub3">双击桌面启动图标，启动 vnpy 主程序。启动时加载全局配置 <code>.vntrader/vt_setting.json</code>（AI 分析链路、MCP 认证、日志级别等都从这里读取，配置修改均需重启主程序生效）。主程序起来后，CTA 运行面板与内置 AI 引擎状态面板即可用。</p>
+    <div class="img-banner">
+      <img src="asset/user_guide/image/桌面启动图标.jpg" alt="桌面启动图标" loading="lazy">
+      <div class="cap"><b>启动系统</b> · 从桌面启动图标启动 TKT 量化交易系统</div>
+    </div>
+
+    <h3>第一步 · 系统连接：输入盈透网关参数</h3>
+    <p class="sub3">在「系统 → 连接」里输入盈透网关（IB Gateway）的连接参数，把量化系统接到交易网关：实时行情与委托通道都由它提供。连接前请确认 IB Gateway 已启动并登录成功。其他市场走对应通道：中国A股用迅投软件、加密货币用币安 api-token（见 PART 01「分市场前置条件」）。</p>
+    <div class="img-banner">
+      <img src="asset/user_guide/image/第一步-系统-连接-输入盈透网关参数.jpg" alt="第一步：系统-连接-输入盈透网关参数" loading="lazy">
+      <div class="cap"><b>第一步</b> · 系统 → 连接：输入盈透网关（IB Gateway）连接参数</div>
+    </div>
+
+    <h3>第二步 · 打开系统配置对话框</h3>
+    <p class="sub3">主窗口菜单栏「配置」打开全局配置对话框，左侧按 7 类可折叠分组编辑：界面与日志、邮件、数据源、数据库、<b style="color:var(--txt)">AI 分析链路</b>（<code>use_goose</code> 总开关：goose 直连或 openclaw 桥，及超时、并发）、数据代理、MCP 认证（用户标识 + 全权限 / 只读两级令牌）。所有修改<b style="color:var(--txt)">重启主程序后生效</b>。对某个配置项「是什么 / 默认值 / 怎么改 / 影响什么」有疑问，直接在 AI 对话框提问，内置答疑，不用翻文档。</p>
+    <div class="img-banner">
+      <img src="asset/user_guide/image/第二步-系统配置对话框（AI对话框答疑）.jpg" alt="第二步：系统配置对话框（AI对话框答疑）" loading="lazy">
+      <div class="cap"><b>第二步</b> · 打开系统配置对话框查看与配置全局设置；配置项有疑问可在 AI 对话框直接答疑</div>
+    </div>
+
+    <h3>第三步 · CTA 策略窗口</h3>
+    <p class="sub3">CTA 策略窗口是策略的主操作区：左边是各策略的 K 线与信号状态（AI 分析、信号探针、RSI 阈值等），右边是内置 AI 引擎执行状态与任务会话——AI 每次分析完，结论就出现在这里。策略的新增、启停与运行状态盯盘，都在这里完成。</p>
+    <div class="img-banner">
+      <img src="asset/user_guide/image/第三步-CTA策略窗口.jpg" alt="第三步：CTA策略窗口" loading="lazy">
+      <div class="cap"><b>第三步</b> · CTA 策略窗口：策略新增 / 启停与运行状态的主操作区</div>
+    </div>
+
+    <h3>第四步 · 新建策略（手动 / 自动）</h3>
+    <p class="sub3">两种建立方式：<b style="color:var(--txt)">手动新建</b>（选择策略类型 + 输入策略参数，详见每种策略介绍），或<b style="color:var(--txt)">由 AI 自动建立</b>（外部 / 内部 AI 工具均可）。系统当前支持三类策略：openclaw-martin（智能马丁格尔网格）、多用途网格（趋势 / 反转 / 波动收波三意图）、Multi_Signal_Treand（多信号权重评分）；参数面板分四段——策略盘面、信号探针、网格与仓位防御、多种止损止盈——同一段代码 + 不同参数组合即成不同策略形态。AI 自动建立时按固定五步走：查策略类 → 查必填参数 → 查 vt_symbol（严禁自己拼）→ 新增并启动 → 回拉验证，开仓前还会交叉核验标的真实身份。</p>
+    <div class="grid g2" style="gap:14px">
+      <div class="img-banner" style="margin:0">
+        <img src="asset/user_guide/image/第四步-手动新建策略（多种策略可选）.jpg" alt="第四步：手动新建策略（多种策略可选）" loading="lazy">
+        <div class="cap"><b>4.1 手动新建</b> · 多种策略可选</div>
+      </div>
+      <div class="img-banner" style="margin:0">
+        <img src="asset/user_guide/image/第四步-手动新建策略（新建策略时输入策略参数_详见每种策略介绍）.jpg" alt="第四步：手动新建策略（输入策略参数）" loading="lazy">
+        <div class="cap"><b>4.2 手动新建</b> · 新建策略时输入策略参数（详见每种策略介绍）</div>
+      </div>
+      <div class="img-banner" style="margin:0">
+        <img src="asset/user_guide/image/第四步-自动新建策略（用外部AI工具workbuddy等来自动建立策略）.jpg" alt="第四步：自动新建策略（外部AI工具）" loading="lazy">
+        <div class="cap"><b>4.3 自动新建</b> · 用外部 AI 工具（workbuddy 等）自动建立策略</div>
+      </div>
+      <div class="img-banner" style="margin:0">
+        <img src="asset/user_guide/image/第四步-自动新建策略（用内部AI工具来自动建立策略）.jpg" alt="第四步：自动新建策略（内部AI工具）" loading="lazy">
+        <div class="cap"><b>4.4 自动新建</b> · 用内部 AI 工具自动建立策略</div>
+      </div>
+    </div>
+
+    <h3>第五步 · 策略运行（手动 / 自动）</h3>
+    <p class="sub3">策略运行期两条线并行：<b style="color:var(--txt)">手动操作</b>——在 CTA 面板直接操作，或用自然语言下指令（如「把 AMD 减半仓」），由 AI 执行调仓 / 开平仓（目标仓位为绝对股数，0 = 空仓，实时生效并回拉回执核对）；<b style="color:var(--txt)">自动运行</b>——策略自动任务按设定间隔与信号探针双触发 AI 分析，输出参数建议并带留痕写入（改了什么、谁改的、为什么，重启不丢失），每笔调仓下单前还过一道订单审核。</p>
+    <div class="grid g2" style="gap:14px">
+      <div class="img-banner" style="margin:0">
+        <img src="asset/user_guide/image/第五步-策略运行（手动操作加减仓_开平仓）.jpg" alt="第五步：手动操作加减仓/开平仓" loading="lazy">
+        <div class="cap"><b>5.1 手动操作</b> · 手动操作加减仓、开平仓</div>
+      </div>
+      <div class="img-banner" style="margin:0">
+        <img src="asset/user_guide/image/第五步-策略运行（策略自动任务进行AI分析与参数设置）.jpg" alt="第五步：策略自动任务进行AI分析与参数设置" loading="lazy">
+        <div class="cap"><b>5.2 自动运行</b> · 策略自动任务进行 AI 分析与参数设置</div>
+      </div>
+    </div>
+
+    <h3>第六步 · AI 自动化任务</h3>
+    <p class="sub3">在「AI 自动化任务管理」里为大盘分析 / 选股 / 策略分析等任务配置<b style="color:var(--txt)">提示词与执行计划</b>（定时间隔等）。引擎加载 tiger-stock-strategy-analysis 技能 + vnpy_mcp 数据总线，拉真实数据做分析，输出四类报告（大盘 / 做多选股 / 做空选股 / 策略分析）并完成下单前审核。也可通过 AI 聊天随时调用技能分析并执行；每日全景复盘、板块轮动调仓、参数变更审计等综合任务，交给 workbuddy / codex 等外部 AI 工具即可完成——老板全程只用自然语言，不写代码。</p>
+    <div class="grid g2" style="gap:14px">
+      <div class="img-banner" style="margin:0">
+        <img src="asset/user_guide/image/第六步-AI自动化任务管理设置.jpg" alt="第六步：AI自动化任务管理设置" loading="lazy">
+        <div class="cap"><b>6.1 任务管理</b> · AI 自动化任务管理设置</div>
+      </div>
+      <div class="img-banner" style="margin:0">
+        <img src="asset/user_guide/image/第六步-AI自动化任务管理设置_提示词与计划.jpg" alt="第六步：提示词与计划" loading="lazy">
+        <div class="cap"><b>6.2 提示词与计划</b> · 配置任务的提示词与执行计划</div>
+      </div>
+      <div class="img-banner" style="margin:0">
+        <img src="asset/user_guide/image/第六步-AI聊天进行技能调用分析和执行.jpg" alt="第六步：AI聊天进行技能调用分析和执行" loading="lazy">
+        <div class="cap"><b>6.3 AI 聊天</b> · AI 聊天进行技能调用、分析和执行</div>
+      </div>
+      <div class="img-banner" style="margin:0">
+        <img src="asset/user_guide/image/第六步-外部AI工具workbuddy等综合分析与执行.jpg" alt="第六步：外部AI工具workbuddy等综合分析与执行" loading="lazy">
+        <div class="cap"><b>6.4 外部 AI 工具</b> · 用 workbuddy 等外部 AI 工具综合分析与执行</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 06 常见问题 -->
+  <section id="faq">
+    <span class="sec-tag">PART 03</span>
+    <h2>常见问题</h2>
+    <p class="sec-desc">使用中踩过的坑与排查方法，随用随补。</p>
+    <div class="todo">
+      <span class="pill p-todo">待编写</span>
+      <ul>
+        <li>常见问题与排查（随实际使用补充）</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer>
+    <span>TKT 量化交易系统 · 操作指南（使用说明）· 内部资料 · 2026-10</span>
+    <span><a href="index.html">← 返回系统介绍</a></span>
+  </footer>
+</div>
+
+<script>
+// 导航高亮
+const links=[...document.querySelectorAll('.sidebar nav a')];
+const secs=links.map(l=>document.querySelector(l.getAttribute('href')));
+window.addEventListener('scroll',()=>{
+  let cur=0;
+  secs.forEach((s,i)=>{if(s&&s.getBoundingClientRect().top<140)cur=i});
+  links.forEach((l,i)=>l.classList.toggle('on',i===cur));
+},{passive:true});
+
+// 移动端目录抽屉（body 锁滚动，防止内容跟着滚）
+const menuBtn=document.getElementById('menuBtn');
+const sidebar=document.getElementById('sidebar');
+const scrim=document.getElementById('scrim');
+function openDrawer(){sidebar.classList.add('open');scrim.classList.add('show');menuBtn.classList.add('open');document.body.classList.add('drawer-open')}
+function closeDrawer(){sidebar.classList.remove('open');scrim.classList.remove('show');menuBtn.classList.remove('open');document.body.classList.remove('drawer-open')}
+menuBtn.addEventListener('click',()=>sidebar.classList.contains('open')?closeDrawer():openDrawer());
+scrim.addEventListener('click',closeDrawer);
+const drawerClose=document.getElementById('drawerClose');
+if(drawerClose)drawerClose.addEventListener('click',closeDrawer);
+links.forEach(l=>l.addEventListener('click',()=>{if(window.innerWidth<=960)closeDrawer()}));
+window.addEventListener('resize',()=>{if(window.innerWidth>960)closeDrawer()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDrawer()});
+</script>
+</body>
+</html>

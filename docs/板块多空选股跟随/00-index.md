@@ -201,7 +201,7 @@ cta_strategies_get_all()
       "参数设置": "按『新建策略参数基线』+ base_direction=1 + start_asset=100000 + openclaw_main_approach（逐标的模板，见 §5）",
       "宪法_openclaw_main_approach": {
         "操作": "新写（新建实例；宪法=每手一版，仅仓位=0 换版）",
-        "内容": "板块多空选股跟随：多 GOOGL，<日期> 报告分数 4.2（大盘方向档=看空→多20%档），目标金额 100000，持有期 10 日（到期强平），止损 322（报告止损位），首仓价格区间 330-343（防追高上限=343）"
+        "内容": "板块多空选股跟随：多 GOOGL，<日期> 报告分数 4.2（大盘方向档=看空→多20%档）"
       },
       "合同_openclaw_user_remark": {
         "操作": "覆盖写完整合同 ①~⑧（开仓前写好，自检与复盘唯一标准）",
@@ -232,7 +232,7 @@ cta_strategies_get_all()
       "参数设置": "按『新建策略参数基线』+ base_direction=-1 + start_asset=200000 + openclaw_main_approach（逐标的模板，见 §5）",
       "宪法_openclaw_main_approach": {
         "操作": "新写（新建实例；宪法=每手一版，仅仓位=0 换版）",
-        "内容": "板块多空选股跟随：空 ARM，<日期> 报告分数 4.15（大盘方向档=看空→空80%档），目标金额 200000，持有期 10 日（到期强平），止损 350（报告止损位），首仓价格区间 322-332（防追低下限=322）"
+        "内容": "板块多空选股跟随：空 ARM，<日期> 报告分数 4.15（大盘方向档=看空→空80%档）"
       },
       "合同_openclaw_user_remark": {
         "操作": "覆盖写完整合同 ①~⑧（开仓前写好，自检与复盘唯一标准）",
@@ -346,7 +346,7 @@ cta_strategies_get_all()
 | `stop_autoprofit_back_maxvalue` 移动止盈回撤幅度 | **0.03** | 从峰值可回撤 3% |
 | `enable_openclaw_analysis` 是否允许AI分析 | **false** | 关闭 AI 分析 |
 | `enable_openclaw_confirm_target_pos` 订单AI审核 | **false** | 关闭订单 AI 审核 |
-| `openclaw_main_approach` 策略核心思路 | "板块多空选股跟随：<方向> <ticker>，<日期> 报告分数 <分数>，目标金额 <T>，持有期 10 日（到期强平），止损 <报告止损位>" | 宪法层，AI 只读（逐标的）；**每手一版，仅仓位=0 换版**（新建/重入/翻转经 `cta_strategy_set_main_approach` 带 reason 覆盖重写），**持仓期锁定禁改** |
+| `openclaw_main_approach` 策略核心思路 | "板块多空选股跟随：<方向> <ticker>，<日期> 报告分数 <分数>（大盘方向档=<方向档>）"（**只写方向/依据，不写具体数值**） | 宪法层，AI 只读（逐标的）；**每手一版，仅仓位=0 换版**（新建/重入/翻转经 `cta_strategy_set_main_approach` 带 reason 覆盖重写），**持仓期锁定禁改**；具体数值（目标金额/持有期/止损/首仓区间）写合同 user_remark，不进核心思路，避免过度锚定 |
 
 > 注：`enable_openclaw_analysis=false` 后策略不做 AI 轮询分析，10 日强平**完全依赖本功能每轮计划的到期检查**（铁则 10）；合同（user_remark）仍写入留痕。
 
@@ -357,7 +357,7 @@ cta_strategies_get_all()
 
 **宪法/合同写入映射（全动作必查，随计划 JSON 交付，见 §4 模板字段）**：
 
-> 宪法 `openclaw_main_approach` = 本实例"只做什么、绝不做"，**每手一版**：仅**仓位=0** 时（新建/重入/翻转）经 `cta_strategy_set_main_approach(策略名, 内容, reason)` 覆盖重写（内容=上表模板，含本轮方向/分数/方向档/目标金额/10 日时限/止损/首仓区间）；**持仓期锁定禁改**。
+> 宪法 `openclaw_main_approach` = 本实例"只做什么、绝不做"的**方向锚点**，**每手一版**：仅**仓位=0** 时（新建/重入/翻转）经 `cta_strategy_set_main_approach(策略名, 内容, reason)` 覆盖重写（内容=上表模板，**只含本轮方向/分数/方向档，不含具体数值**——目标金额/10 日时限/止损/首仓区间等一律写合同 user_remark，避免过度锚定 AI）；**持仓期锁定禁改**。
 > 合同 `openclaw_user_remark` = 本手意图+考核条款：①~⑦ 换手时定、执行中锁定；**⑧ 现状执行中每轮追加**；重大事件追加事件行；**全部价格/数量/日期用具体数值，禁形容词**（经 `cta_strategy_send_user_remark`）。
 
 | 动作 | 宪法 main_approach | 合同 user_remark |

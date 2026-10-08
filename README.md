@@ -332,3 +332,6 @@ python scripts/sync_crypto_pool.py
 | `get_market_data.py`（calendar） | `pip install -U camoufox[geoip]` + `camoufox fetch` | 必须绕过 Cloudflare 获取 ForexFactory 经济日历 |
 | `test_get_market_data.py` | `pip install pandas` | 测试脚本中构造模拟 DataFrame 数据 |
 | `tools.py` | （纯标准库，无需安装） | JSON 文件读取工具函数 |
+
+---
+
