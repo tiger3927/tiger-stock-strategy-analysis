@@ -858,6 +858,10 @@ ICI_URLS = {
 
 # OrioSearch 市场指标查询（替代 web_search）
 ORIO_URL = "https://search.my-gun.top"
+# API Key（2026-10-09 服务启用鉴权：缺失 401，错误 403）
+# 优先环境变量 ORIOSEARCH_API_KEY，未设置时用内置默认（勿将本文件提交公开仓库）
+ORIOSEARCH_API_KEY = os.environ.get(
+    "ORIOSEARCH_API_KEY", "sk-ario-9d0b3f8400d4d09ea58c6b76362acddb")
 
 # 查询模板（日期在函数内动态计算）
 WEB_INDICATOR_QUERIES_TEMPLATE = {
@@ -1942,7 +1946,9 @@ def _search_oriosearch(query):
 
     def _try_request(payload_copy):
         try:
-            r = requests.post(f"{ORIO_URL}/search", json=payload_copy, timeout=(5, 90))
+            r = requests.post(f"{ORIO_URL}/search", json=payload_copy,
+                              headers={"Authorization": f"Bearer {ORIOSEARCH_API_KEY}"},
+                              timeout=(5, 90))
             if r.status_code != 200:
                 return None
             data = r.json()
