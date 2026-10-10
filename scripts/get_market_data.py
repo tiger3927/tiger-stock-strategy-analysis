@@ -877,6 +877,16 @@ _ORIO_CFG = _load_orio_config()
 ORIO_URL = os.environ.get("ORIOSEARCH_URL", _ORIO_CFG["url"])
 ORIOSEARCH_API_KEY = os.environ.get("ORIOSEARCH_API_KEY", _ORIO_CFG["api_key"])
 
+# 多端点回退（2026-10-10）：主端点失败/超时/无结果时自动切 fallback 端点重试。
+# 配置：orio_config.json 加 "fallback": {"url": "...", "api_key": "..."}
+# （api_key 可省略则沿用主端点 Key；端点与主端点相同则视为无回退）。
+# 典型用途：本地 Docker 挂掉/被限流 → 切远程独立检索栈 search.my-gun.top。
+_ORIO_FALLBACK_CFG = _ORIO_CFG.get("fallback") or {}
+ORIO_FALLBACK_URL = (_ORIO_FALLBACK_CFG.get("url") or "").rstrip("/")
+ORIO_FALLBACK_KEY = _ORIO_FALLBACK_CFG.get("api_key") or ORIOSEARCH_API_KEY
+ORIO_FALLBACK_ENABLED = bool(
+    ORIO_FALLBACK_URL and ORIO_FALLBACK_URL != ORIO_URL.rstrip("/"))
+
 # 查询模板（日期在函数内动态计算）
 WEB_INDICATOR_QUERIES_TEMPLATE = {
     "HY_OAS": "high yield OAS FRED current level basis points",
@@ -1731,6 +1741,25 @@ def _is_no_answer(text):
     return bool(_NO_ANSWER_RE.search(text[:300]))
 
 
+def _value_before_negation(answer):
+    """首个带量纲真值是否出现在首个"无答案模板"词之前
+
+    2026-10-10（HY_OAS 误杀案例）：LLM 答案前半给值（"reported at 3.03%, which
+    equals 303 basis points"），尾部对**其他来源**对冲（"the numeric current
+    level is not shown in the provided snippet [1][2]"），被模板词表误杀。
+    判据：真值位置 < 模板词位置 → 否定只针对部分来源，真值应保留。
+    反之（否定在前、数字在后）多半是模板顺带引用的数字，仍视为无答案。
+    """
+    i_val = None
+    for m in _MAG_RE.finditer(answer):
+        if not _YEAR_RE.match(m.group(0)):
+            i_val = m.start()
+            break
+    i_no = _NO_ANSWER_RE.search(answer[:300])
+    i_no = i_no.start() if i_no else len(answer)
+    return i_val is not None and i_val < i_no
+
+
 # ---------- 有效值闸门（第二道判据） ----------
 # 仅靠句式表判不住"有返回、不含否定模板词、但通篇没有目标数值"的答案。
 # 要求答案里存在 ① 带量纲数值（$X.XT/B/M、NNN%、NNNbp）或
@@ -1904,9 +1933,11 @@ def fetch_web_indicators():
         else:
             pending[k] = q
 
-    # 2) 搜索兜底（并发，总耗时 ≈ 最慢单项）
+    # 2) 搜索兜底（限流：3 并发 + 每项随机抖动启动。
+    #    全量 14 路并发会同时锤 SearXNG→Google，实测 google 引擎跑十几分钟即被限流掉线；
+    #    降并发 + 错峰后单引擎响应更稳，总耗时约 1.5~2 分钟，可接受。）
     if pending:
-        with ThreadPoolExecutor(max_workers=len(pending)) as executor:
+        with ThreadPoolExecutor(max_workers=3) as executor:
             fut_map = {}
             for k, q in pending.items():
                 fut_map[executor.submit(_search_oriosearch, q)] = (k, time.time())
@@ -1917,6 +1948,11 @@ def fetch_web_indicators():
                 result["search_time_s"] += dt
                 if answer and _is_no_answer(answer):
                     ok, val, src = False, "N/A(无有效答案)", "no_answer"
+                    # 尾部对冲豁免：模板词若出现在真值之后（否定仅针对部分来源），
+                    # 且量纲校验通过，则保留真值计为 hit（2026-10-10 HY_OAS 303 bps 案例）
+                    v_ok, v_val = _validate_indicator_value(key, answer)
+                    if v_ok and _value_before_negation(answer):
+                        ok, val, src = True, v_val, "oriosearch"
                 elif answer:
                     ok, val = _validate_indicator_value(key, answer)
                     src = "oriosearch" if ok else "no_valid_value"
@@ -1947,21 +1983,27 @@ def _search_oriosearch(query):
       2. answer 为 None 时，从 results 列表中提取前 3 条的 title+content
          作为推算文本，这样即使 OrioSearch 不生成 AI 摘要也能拿到有用数据
       3. advanced 超时 → 降级 basic 重试
+      4. 多端点回退：主端点 失败/超时/无结果 → 自动切 fallback 端点重试
+         （配置 orio_config.json 的 "fallback"，如 本地 Docker → 远程 search.my-gun.top）
     """
+    # 随机错峰 0~1.5s：避免多路并发同时打到 SearXNG/Google（降低被限流概率）
+    time.sleep(random.uniform(0, 1.5))
     payload = {
         "query": query,
         "search_depth": "advanced",
         "max_results": 5,
         "include_answer": True,
-        # 2026-09-21: 服务默认 general 主题索引已失效（返回中文站/词典结果，14 项全空）；
-        # 服务仅接受 general|news 两种 topic（finance/science 会 422），news 主题可恢复财经命中
-        "topic": "news",
+        # 2026-09-21（远程 search.my-gun.top）：general 主题失效、news 可恢复财经命中；
+        # 2026-10-09（本地 Docker SearXNG）：实测相反——news 引擎覆盖稀疏（HY_OAS/PutCallRatio 0 结果），
+        # general 有结果且 include_answer 能答出目标数值，故本地用 general。
+        # 服务仅接受 general|news 两种 topic（finance/science 会 422）
+        "topic": "general",
     }
 
-    def _try_request(payload_copy):
+    def _try_request(url, api_key, payload_copy):
         try:
-            r = requests.post(f"{ORIO_URL}/search", json=payload_copy,
-                              headers={"Authorization": f"Bearer {ORIOSEARCH_API_KEY}"},
+            r = requests.post(f"{url}/search", json=payload_copy,
+                              headers={"Authorization": f"Bearer {api_key}"},
                               timeout=(5, 90))
             if r.status_code != 200:
                 return None
@@ -1993,14 +2035,20 @@ def _search_oriosearch(query):
         except Exception:
             return None
 
-    # 先 advanced
-    result = _try_request(payload)
-    if result == "__TIMEOUT__":
-        # advanced 超时 → 降级 basic 重试
-        payload["search_depth"] = "basic"
-        result = _try_request(payload)
-    # __TIMEOUT__ 视为失败
-    return result if result != "__TIMEOUT__" else None
+    def _run_attempts(url, api_key):
+        """单端点：先 advanced，超时降级 basic 重试；__TIMEOUT__ 视为失败返回 None"""
+        p = dict(payload)
+        result = _try_request(url, api_key, p)
+        if result == "__TIMEOUT__":
+            p["search_depth"] = "basic"
+            result = _try_request(url, api_key, p)
+        return result if result != "__TIMEOUT__" else None
+
+    result = _run_attempts(ORIO_URL.rstrip("/"), ORIOSEARCH_API_KEY)
+    # 4) 多端点回退：主端点拿不到结果（无 answer 也无 results / 超时 / 报错）时切 fallback 端点
+    if not result and ORIO_FALLBACK_ENABLED:
+        result = _run_attempts(ORIO_FALLBACK_URL, ORIO_FALLBACK_KEY)
+    return result
 
 
 def _extract_indicator_value(answer):
