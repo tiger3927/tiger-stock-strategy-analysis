@@ -857,11 +857,25 @@ ICI_URLS = {
 }
 
 # OrioSearch 市场指标查询（替代 web_search）
-ORIO_URL = "https://search.my-gun.top"
-# API Key（2026-10-09 服务启用鉴权：缺失 401，错误 403）
-# 优先环境变量 ORIOSEARCH_API_KEY，未设置时用内置默认（勿将本文件提交公开仓库）
-ORIOSEARCH_API_KEY = os.environ.get(
-    "ORIOSEARCH_API_KEY", "sk-ario-9d0b3f8400d4d09ea58c6b76362acddb")
+# 配置优先级：环境变量 ORIOSEARCH_URL / ORIOSEARCH_API_KEY > 同目录 orio_config.json > 内置默认值
+# （2026-10-09 服务启用鉴权：缺失 401，错误 403；本文件与 orio_config.json 勿提交公开仓库）
+_ORIO_CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "orio_config.json")
+
+
+def _load_orio_config():
+    """读取同目录 orio_config.json；文件缺失/JSON 损坏时静默回退内置默认值"""
+    defaults = {"url": "https://search.my-gun.top",
+                "api_key": "sk-ario-9d0b3f8400d4d09ea58c6b76362acddb"}
+    try:
+        with open(_ORIO_CONFIG_PATH, encoding="utf-8") as f:
+            return {**defaults, **json.load(f)}
+    except (OSError, ValueError):
+        return defaults
+
+
+_ORIO_CFG = _load_orio_config()
+ORIO_URL = os.environ.get("ORIOSEARCH_URL", _ORIO_CFG["url"])
+ORIOSEARCH_API_KEY = os.environ.get("ORIOSEARCH_API_KEY", _ORIO_CFG["api_key"])
 
 # 查询模板（日期在函数内动态计算）
 WEB_INDICATOR_QUERIES_TEMPLATE = {
