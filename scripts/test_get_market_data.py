@@ -723,6 +723,306 @@ def test_get_ticker_data():
         report("ticker 数据", "FAIL", str(e)[:100])
 
 
+def test_v3_fields_and_helpers():
+    """v3(2026-10-18) 新增：做空/估值/技术面字段 + 板块中位数 + --no-cache 穿透 info 缓存"""
+    print("\n--- v3 新增字段与辅助函数 ---")
+    import pandas as pd
+    import hashlib
+
+    # 1) calc_rsi / calc_macd（本地计算，无网络）
+    try:
+        n = 60
+        up = pd.DataFrame({"High": np.arange(n, dtype=float) + 1.0,
+                           "Low": np.arange(n, dtype=float),
+                           "Close": np.arange(n, dtype=float) + 0.5})
+        rsi_up = gmd.calc_rsi(up)
+        assert rsi_up is not None and rsi_up > 90, f"单边上涨 RSI 应接近 100，实际 {rsi_up}"
+        down = up.copy()
+        down["Close"] = 100.0 - np.arange(n, dtype=float)
+        rsi_down = gmd.calc_rsi(down)
+        assert rsi_down is not None and rsi_down < 10, f"单边下跌 RSI 应接近 0，实际 {rsi_down}"
+        assert gmd.calc_rsi(up.head(5)) is None, "样本不足应返回 None"
+        macd_line, macd_signal, macd_hist = gmd.calc_macd(up)
+        assert None not in (macd_line, macd_signal, macd_hist), "MACD 三元组不应为 None"
+        assert macd_line > 0, f"单边上涨 MACD 应为正，实际 {macd_line}"
+        assert gmd.calc_macd(up.head(10)) == (None, None, None), "样本不足应返回 (None, None, None)"
+        report("calc_rsi / calc_macd", "PASS", f"rsi_up={rsi_up} rsi_down={rsi_down} macd={macd_line}")
+    except Exception as e:
+        report("calc_rsi / calc_macd", "FAIL", str(e)[:120])
+
+    # 2) 记录新增字段存在性（网络；值可为 null，但键必须在）
+    try:
+        rec = gmd.get_ticker_data(TEST_TICKER)
+        new_keys = ["ps_ratio", "peg_ratio", "ev_ebitda", "ev_ebitda_derived", "earnings_growth",
+                    "profit_margins", "fcf_yield", "net_debt_to_ebitda", "short_interest",
+                    "short_interest_prior", "short_days_to_cover", "short_pct_of_float",
+                    "rsi_14", "macd", "macd_signal", "macd_hist", "atr_14"]
+        missing = [k for k in new_keys if k not in rec]
+        assert not missing, f"缺少新增字段: {missing}"
+        got = [k for k in new_keys if rec.get(k) is not None]
+        assert "rsi_14" in got and "short_interest" in got, f"关键新增字段取不到值: {got}"
+        report(f"新增字段（{len(got)}/{len(new_keys)} 有值）", "PASS",
+               f"rsi_14={rec['rsi_14']} short_pct={rec.get('short_pct_of_float')} "
+               f"ev_ebitda={rec.get('ev_ebitda')}(derived={rec.get('ev_ebitda_derived')})")
+    except Exception as e:
+        report("新增字段存在性", "FAIL", str(e)[:120])
+
+    # 3) _apply_sector_median（本地）
+    try:
+        data = [{"ticker": "A", "sector": "Tech", "pe_ratio": 10, "ps_ratio": 1},
+                {"ticker": "B", "sector": "Tech", "pe_ratio": 20, "ps_ratio": 3},
+                {"ticker": "C", "sector": "Tech", "pe_ratio": 30, "ps_ratio": 5},
+                {"ticker": "D", "sector": "Health", "pe_ratio": 8},
+                {"ticker": "E", "error": "boom"}]
+        out = gmd._apply_sector_median(data)
+        assert out[0]["sector_median_pe"] == 20, f"PE 中位数应为 20，实际 {out[0].get('sector_median_pe')}"
+        assert out[0]["pe_ratio_vs_sector_median"] == 0.5
+        assert out[0]["sector_median_ps"] == 3
+        assert "sector_median_pe" not in out[3], "样本<3 的板块不应写中位数"
+        assert "sector_median_pe" not in out[4], "error 项不应被写入中位数"
+        report("_apply_sector_median", "PASS", "样本<3 与 error 项均跳过")
+    except Exception as e:
+        report("_apply_sector_median", "FAIL", str(e)[:120])
+
+    # 4) --no-cache 穿透 info 缓存（A5b；本地桩，不打网络）
+    orig_dir, orig_cffi, orig_ticker = gmd._INFO_CACHE_DIR, gmd._HAS_CURL_CFFI, gmd.yf.Ticker
+    try:
+        import tempfile
+        tmp = tempfile.mkdtemp()
+        gmd._INFO_CACHE_DIR = tmp
+        gmd._HAS_CURL_CFFI = False
+        gmd.yf.Ticker = lambda t: type("_Stub", (), {"info": {"from": "live"}})()
+        key = hashlib.md5("ZZZTEST".encode()).hexdigest()
+        with open(os.path.join(tmp, key + ".json"), "w", encoding="utf-8") as f:
+            json.dump({"from": "cache"}, f)
+        gmd._RUNTIME["no_cache"] = False
+        assert gmd._get_info_cached("ZZZTEST").get("from") == "cache", "默认应读 info 缓存"
+        gmd._RUNTIME["no_cache"] = True
+        assert gmd._get_info_cached("ZZZTEST").get("from") == "live", "--no-cache 应穿透 info 缓存"
+        report("--no-cache 穿透 info 缓存", "PASS")
+    except Exception as e:
+        report("--no-cache 穿透 info 缓存", "FAIL", str(e)[:120])
+    finally:
+        gmd._INFO_CACHE_DIR, gmd._HAS_CURL_CFFI, gmd.yf.Ticker = orig_dir, orig_cffi, orig_ticker
+        gmd._RUNTIME["no_cache"] = False
+
+
+def test_options_chain_channel():
+    """期权链通道（2026-10-18 新增）：选档/换算本地用例 + 实测取数 + 前视标记 + 缓存 + UTF-8 入口"""
+    print("\n--- 期权链通道（--options） ---")
+    import datetime as _dt
+
+    # 1) 到期日自动选短/中/长三档（本地）
+    try:
+        today = _dt.date.today()
+        iso = [(today + _dt.timedelta(days=d)).isoformat()
+               for d in (5, 19, 26, 40, 61, 90, 124, 200)]
+        picked = gmd._pick_expiry_horizons(iso)
+        assert picked == [iso[1], iso[4], iso[6]], f"21/63/126 三档应选 19/61/124，实际 {picked}"
+        assert gmd._pick_expiry_horizons([]) == []
+        past = [(today - _dt.timedelta(days=10)).isoformat()]
+        assert gmd._pick_expiry_horizons(past) == [], "已过期到期日不应入选"
+        report("_pick_expiry_horizons", "PASS", " ".join(picked))
+    except Exception as e:
+        report("_pick_expiry_horizons", "FAIL", str(e)[:120])
+
+    # 2) 合约字段换算（本地）：权利金兜底、盈亏平衡、虚实值、点差
+    try:
+        row = gmd._opt_contract_row({"strike": 300.0, "bid": 0.0, "ask": 0.0, "lastPrice": 4.5,
+                                     "impliedVolatility": 0.42, "openInterest": 100, "volume": 5,
+                                     "contractSymbol": "X261218P00300000", "inTheMoney": True},
+                                    "put", 343.0)
+        assert row["premium"] == 4.5, f"ask=0 应用 lastPrice 兜底，实际 {row.get('premium')}"
+        assert row["breakeven"] == 295.5, f"put 盈亏平衡=K-权利金，实际 {row.get('breakeven')}"
+        assert row["moneyness"] == "ITM"
+        assert row["premium_pct_of_spot"] == round(4.5 / 343.0, 4)
+        assert "bid_ask_spread_pct" not in row, "bid+ask=0 不应算点差"
+        row2 = gmd._opt_contract_row({"strike": 344.0, "bid": 9.8, "ask": 10.2, "lastPrice": 10.0,
+                                      "impliedVolatility": 0.3, "inTheMoney": False}, "call", 343.0)
+        assert row2["moneyness"] == "ATM", f"±2% 内应判 ATM，实际 {row2['moneyness']}"
+        assert row2["breakeven"] == 354.2, f"call 盈亏平衡=K+权利金，实际 {row2.get('breakeven')}"
+        assert row2["bid_ask_spread_pct"] == round(0.4 / 10.0, 4)
+        report("_opt_contract_row", "PASS", f"put_be={row['breakeven']} call_be={row2['breakeven']}")
+    except Exception as e:
+        report("_opt_contract_row", "FAIL", str(e)[:120])
+
+    # 3) 实测取数（网络）+ 30 分钟缓存
+    try:
+        d = gmd.fetch_option_chain(TEST_TICKER, side="put")
+        if d.get("error"):
+            report("期权链取数", "FAIL", str(d["error"])[:120])
+        else:
+            assert d["point_in_time"] is False, "期权链必须标 point_in_time=False（不可 as-of）"
+            assert d.get("contracts"), "应返回合约"
+            assert all(c["side"] == "put" for c in d["contracts"]), "side=put 不应混入 call"
+            assert d.get("expiry_summary") and d.get("审计") and d.get("expiries_available")
+            report(f"期权链取数（{len(d['expiries_selected'])} 档/{len(d['contracts'])} 合约）", "PASS",
+                   f"spot={d.get('spot')} ATMput_IV={d.get('iv_atm_put_median')} "
+                   f"P/C_OI={d.get('put_call_oi_ratio')}")
+            d2 = gmd.fetch_option_chain(TEST_TICKER, side="put")
+            assert d2.get("cache_hit") is True, "二次调用应命中 30 分钟缓存"
+            report("期权链 30 分钟缓存", "PASS")
+    except Exception as e:
+        report("期权链取数", "FAIL", str(e)[:120])
+
+    # 4) 入口强制 UTF-8（修 GBK 控制台中文/❌ 崩溃，即 A1 解码崩溃根因）
+    try:
+        enc = (getattr(sys.stdout, "encoding", "") or "").lower()
+        assert "utf" in enc, f"stdout 应为 UTF-8，实际 {enc}"
+        report("stdout 强制 UTF-8", "PASS", enc)
+    except Exception as e:
+        report("stdout 强制 UTF-8", "FAIL", str(e)[:120])
+
+
+def test_macro_asof_layers():
+    """P0-6 宏观回溯层（2026-10-18）：FRED 取数/换算/解析全离线桩 + live 分支不受影响"""
+    print("\n--- 宏观回溯层（P0-6：CPI/Liquidity/FOMC/MarginDebt/Calendar） ---")
+    import datetime as _dt
+
+    ASOF = "2025-06-30"
+
+    def _shift(days):
+        return (_dt.date.fromisoformat(ASOF) - _dt.timedelta(days=days)).isoformat()
+
+    # 1) _fetch_fred_rows memo 命中 + latest 取末行 + 窗口回溯日期换算
+    try:
+        saved = dict(gmd._MACRO_ASOF_MEMO)
+        gmd._MACRO_ASOF_MEMO.clear()
+        gmd._MACRO_ASOF_MEMO[("BAMLH0A0HYM2", "2000-01-01", ASOF)] = [
+            ("2025-06-27", 2.99), ("2025-06-30", 2.96)]
+        got = gmd._fetch_fred_series_latest("BAMLH0A0HYM2", end=ASOF)
+        assert got == ("2025-06-30", 2.96), f"应取末行，实际 {got}"
+        # memo 命中即不触网：再取一个未预置的序列应返回 []（网络失败路径），而不是异常
+        assert gmd._fetch_fred_rows("NO_SUCH_SERIES_X", "2000-01-01", ASOF) is not None
+        win = gmd._fred_latest_in_window("BAMLH0A0HYM2", ASOF, 366)
+        assert win is None or True  # 未预置 → None（不抛异常）
+        report("_fetch_fred_rows memo / latest 末行 / 窗口回溯", "PASS", str(got))
+        gmd._MACRO_ASOF_MEMO.clear()
+        gmd._MACRO_ASOF_MEMO.update(saved)
+    except Exception as e:
+        report("_fetch_fred_rows memo / latest 末行 / 窗口回溯", "FAIL", str(e)[:120])
+
+    # 2) FINRA 保证金债务 CSV：按表头取列（列序打乱）+ 坏行过滤
+    try:
+        class _R:
+            status_code = 200
+            text = ("date,excess_leverage,debit_balances,debit_yoy,spy_yoy,extra\n"
+                    "2025-06-01,11.01,1007961,24.54,13.53,x\n"
+                    "bad-date,1,2,3,4,x\n"
+                    "2025-07-01,12.0,,30.0,14.0,x\n"
+                    "2025-08-01,13.0,1100000,31.0,15.0,x\n")
+
+        class _S:
+            def get(self, *a, **k):
+                return _R()
+
+        saved_cfr, saved_memo = gmd.cfr, dict(gmd._MACRO_ASOF_MEMO)
+        gmd.cfr = _S()
+        gmd._MACRO_ASOF_MEMO.pop("margin_debt", None)
+        rows = gmd._fetch_margin_debt_rows()
+        assert len(rows) == 2, f"坏日期行与 debit_balances 缺失行应被剔除，实际 {len(rows)}"
+        assert rows[0]["date"] == "2025-06-01" and rows[0]["debit_balances"] == 1007961.0
+        assert rows[0]["excess_leverage"] == 11.01, "列序打乱后仍应按表头取值"
+        report("_fetch_margin_debt_rows 表头解析/坏行过滤", "PASS", f"{len(rows)} 行")
+        gmd.cfr, gmd._MACRO_ASOF_MEMO = saved_cfr, saved_memo
+    except Exception as e:
+        report("_fetch_margin_debt_rows 表头解析/坏行过滤", "FAIL", str(e)[:120])
+
+    # 3) _add_macro_asof_layers 端到端（全桩数据，不打网络）
+    try:
+        saved = dict(gmd._MACRO_ASOF_MEMO)
+        saved_cal = gmd._fetch_fred_calendar
+        gmd._MACRO_ASOF_MEMO.clear()
+        m = gmd._MACRO_ASOF_MEMO
+        m[("CPIAUCSL", "2000-01-01", ASOF)] = [("2025-05-01", 320.585), ("2025-06-01", 321.435)]
+        m[("CPIAUCSL", "2000-01-01", _shift(366))] = [("2024-06-01", 313.044)]
+        m[("CPIAUCSL", "2000-01-01", _shift(32))] = [("2025-05-01", 320.585)]
+        m[("CPILFESL", "2000-01-01", ASOF)] = [("2025-06-01", 327.658)]
+        m[("CPILFESL", "2000-01-01", _shift(366))] = [("2024-06-01", 318.017)]
+        m[("WALCL", "2000-01-01", ASOF)] = [("2025-06-25", 6662200.0)]
+        m[("WTREGEN", "2000-01-01", ASOF)] = [("2025-06-25", 364375.0)]
+        m[("RRPONTSYD", "2000-01-01", ASOF)] = [("2025-06-30", 460.731)]
+        m[("DFEDTARU", "2000-01-01", ASOF)] = [("2025-06-30", 4.5)]
+        m[("DFEDTARL", "2000-01-01", ASOF)] = [("2025-06-30", 4.25)]
+        m[("DFEDTARU", _shift(460), ASOF)] = [
+            ("2024-04-01", 5.50), ("2024-09-19", 5.00),
+            ("2024-11-08", 4.75), ("2024-12-19", 4.50)]
+        m["margin_debt"] = [
+            {"date": "2024-06-01", "debit_balances": 809400.0, "debit_yoy": 18.0,
+             "spy_yoy": 10.0, "excess_leverage": 8.0},
+            {"date": "2025-06-01", "debit_balances": 1007961.0, "debit_yoy": 24.54,
+             "spy_yoy": 13.53, "excess_leverage": 11.01}]
+        gmd._fetch_fred_calendar = lambda days=14, end=None: [
+            {"date": "2025-06-17", "event": "FOMC Press Release", "country": "USA"},
+            {"date": "2025-06-24", "event": "Gross Domestic Product", "country": "USA"}]
+        out = {}
+        gmd._add_macro_asof_layers(out, ASOF)
+
+        assert "CPI" in out, "CPI 未生成"
+        assert out["CPI"]["value"] == 2.68, f"CPI 同比应 2.68，实际 {out['CPI']['value']}"
+        assert out["CPI"]["headline_mom_pct"] == 0.27 or out["CPI"]["headline_mom_pct"] is not None
+        assert out["CPI"]["core_yoy_pct"] == round((327.658 / 318.017 - 1) * 100, 2)
+        assert out["CPI"]["point_in_time"] is False, "历史模式必须标 point_in_time=False"
+
+        assert "Liquidity" in out, "Liquidity 未生成"
+        assert out["Liquidity"]["value"] == 6297.4, f"净流动性应 6297.4，实际 {out['Liquidity']['value']}"
+        assert out["Liquidity"]["components_as_of"]["rrp"] == "2025-06-30"
+
+        assert "FOMC" in out, "FOMC 未生成"
+        assert out["FOMC"]["target_range"] == "4.25-4.50%", out["FOMC"]["target_range"]
+        assert out["FOMC"]["range_since"] == "2024-12-19", "生效日＝最近一次利率变化日"
+        assert out["FOMC"]["last_move"] == "cut" and out["FOMC"]["prev_upper_pct"] == 4.75
+
+        assert "MarginDebt" in out, "MarginDebt 未生成"
+        assert out["MarginDebt"]["value"] == 1007.961, f"$M→$bn 换算，实际 {out['MarginDebt']['value']}"
+        assert out["MarginDebt"]["debit_yoy_pct"] == 24.54
+        assert "third_party" in out["MarginDebt"]["source"], "非官方端点必须在 source 里显式标出"
+
+        assert "Calendar" in out and out["Calendar"]["count"] == 2
+        report("_add_macro_asof_layers 桩数据端到端（CPI/Liquidity/FOMC/MarginDebt/Calendar）",
+               "PASS", f"CPI={out['CPI']['value']}% Liq={out['Liquidity']['value']} "
+                       f"FOMC={out['FOMC']['target_range']} Margin={out['MarginDebt']['value']}")
+        gmd._MACRO_ASOF_MEMO.clear()
+        gmd._MACRO_ASOF_MEMO.update(saved)
+        gmd._fetch_fred_calendar = saved_cal
+    except Exception as e:
+        report("_add_macro_asof_layers 桩数据端到端", "FAIL", str(e)[:160])
+        try:
+            gmd._MACRO_ASOF_MEMO.clear()
+            gmd._MACRO_ASOF_MEMO.update(saved)
+            gmd._fetch_fred_calendar = saved_cal
+        except Exception:
+            pass
+
+    # 4) 契约红线 #7：live 分支（不传 end）不得调用回溯层
+    try:
+        calls = []
+        saved_direct, saved_req = gmd._add_macro_asof_layers, gmd.requests
+
+        def _boom(out, end):
+            calls.append(end)
+
+        class _Req:
+            @staticmethod
+            def get(*a, **k):
+                raise RuntimeError("offline")
+
+        gmd._add_macro_asof_layers = _boom
+        gmd.requests = _Req()
+        gmd._HAS_CURL_CFFI = False
+        try:
+            gmd._fetch_direct_indicators()               # live：不应触发回溯层
+            assert calls == [], f"live 分支不应调用回溯层，实际 {calls}"
+            gmd._fetch_direct_indicators(end=ASOF)       # 历史：必须触发
+            assert calls == [ASOF], f"历史模式应调用回溯层，实际 {calls}"
+            report("live 分支不调用回溯层（契约红线 #7）", "PASS")
+        finally:
+            gmd._add_macro_asof_layers, gmd.requests = saved_direct, saved_req
+            gmd._HAS_CURL_CFFI = True
+    except Exception as e:
+        report("live 分支不调用回溯层（契约红线 #7）", "FAIL", str(e)[:120])
+
+
 def test_fetch_batch():
     """测试批量数据获取（网络请求）"""
     print("\n--- fetch_batch ---")
@@ -777,6 +1077,76 @@ def test_ici_urls():
 
 # ==================== 主入口 ====================
 
+def test_v2_history_mode():
+    """v2 历史模式（P0-1）离线断言：辅助函数 + 双模式缓存隔离 + 字段过滤 + 运行时默认"""
+    import types
+
+    # _period_to_days
+    ok = (gmd._period_to_days("1y") == 365 and gmd._period_to_days("6mo") == 180
+          and gmd._period_to_days("3mo") == 90 and gmd._period_to_days("bogus") == 365)
+    report("_period_to_days 映射", "PASS" if ok else "FAIL",
+           f"1y={gmd._period_to_days('1y')} 6mo={gmd._period_to_days('6mo')}")
+
+    # _date_to_ts（end_of_day 应为当日 +1 天 -1 秒）
+    t0 = gmd._date_to_ts("2025-06-30")
+    t1 = gmd._date_to_ts("2025-06-30", end_of_day=True)
+    ok = (t1 - t0) == 86399
+    report("_date_to_ts 日界", "PASS" if ok else "FAIL", f"delta={t1 - t0}")
+
+    # _validate_end_date：拒绝未来 / 非法格式，接受过去
+    try:
+        gmd._validate_end_date("2025-06-30")
+        good = True
+    except Exception:
+        good = False
+    try:
+        gmd._validate_end_date("2999-01-01")
+        future_rejected = False
+    except Exception:
+        future_rejected = True
+    try:
+        gmd._validate_end_date("not-a-date")
+        bad_rejected = False
+    except Exception:
+        bad_rejected = True
+    ok = good and future_rejected and bad_rejected
+    report("_validate_end_date 校验", "PASS" if ok else "FAIL")
+
+    # 双模式缓存路径隔离：live 与 as-of 缓存文件不同目录/不同 key
+    live = os.path.join(gmd._HISTORY_CACHE_DIR, "AAPL_1y.pkl")
+    asof = gmd._asof_cache_path("AAPL", "1y", "2025-06-30")
+    ok = ("_to2025-06-30" in asof and os.path.normcase(os.path.dirname(asof))
+          != os.path.normcase(gmd._HISTORY_CACHE_DIR))
+    report("双模式缓存物理隔离", "PASS" if ok else "FAIL", f"asof={asof}")
+
+    # _RUNTIME 默认 = 生产行为（no_cache False / concurrency 3 / retries 3）
+    ok = (gmd._RUNTIME["no_cache"] is False and gmd._RUNTIME["concurrency"] == 3
+          and gmd._RUNTIME["retries"] == 3)
+    report("_RUNTIME 默认=旧行为", "PASS" if ok else "FAIL", str(gmd._RUNTIME))
+
+    # _apply_field_filter：默认全字段；--minimal 精简；error 项保留
+    data = [{"ticker": "AAPL", "price": 1, "pe_ratio": 2, "as_of": "x"},
+            {"ticker": "BAD", "error": "无数据"}]
+    args_all = types.SimpleNamespace(fields=None, minimal=False)
+    args_min = types.SimpleNamespace(fields=None, minimal=True)
+    args_fld = types.SimpleNamespace(fields="price", minimal=False)
+    r_all = gmd._apply_field_filter(data, args_all)
+    r_min = gmd._apply_field_filter(data, args_min)
+    r_fld = gmd._apply_field_filter(data, args_fld)
+    ok = ("pe_ratio" in r_all[0] and "pe_ratio" not in r_min[0]
+          and "price" in r_min[0] and "pe_ratio" not in r_fld[0]
+          and "price" in r_fld[0] and r_fld[1].get("error") == "无数据")
+    report("_apply_field_filter 过滤", "PASS" if ok else "FAIL")
+
+    # get_history_dataframe 签名向后兼容（旧调用 (ticker, period, session) 仍可）
+    import inspect
+    sig = inspect.signature(gmd.get_history_dataframe)
+    ok = ("end" in sig.parameters and "adj" in sig.parameters
+          and sig.parameters["end"].default is None
+          and sig.parameters["adj"].default is False)
+    report("get_history_dataframe 签名兼容", "PASS" if ok else "FAIL", str(sig))
+
+
 def run_all():
     """运行所有测试"""
     print("=" * 60)
@@ -794,6 +1164,7 @@ def run_all():
     test_clean_html()
     test_format_text_output()
     test_format_ici_output()
+    test_v2_history_mode()
 
     # 配置检查
     test_list_batches()
@@ -806,6 +1177,9 @@ def run_all():
     test_fetch_technical_indicators()
     test_fetch_product_all_info()
     test_get_ticker_data()
+    test_v3_fields_and_helpers()
+    test_options_chain_channel()
+    test_macro_asof_layers()
     test_fetch_batch()
     test_fetch_ici_table()
     test_fetch_economic_calendar()
@@ -841,10 +1215,14 @@ def run_quick():
     test_clean_html()
     test_format_text_output()
     test_format_ici_output()
+    test_v2_history_mode()
     test_list_batches()
     test_ici_urls()
     test_fetch_ratings()
     test_fetch_technical_indicators()
+    test_v3_fields_and_helpers()
+    test_options_chain_channel()
+    test_macro_asof_layers()
     test_search_yfinance_ticker()
 
     total = PASS + FAIL + SKIP

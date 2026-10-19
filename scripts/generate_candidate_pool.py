@@ -33,10 +33,12 @@ AI（智能体）保留的判断题：板块方向选择、负面新闻定性、
 """
 import argparse
 import json
+import math
 import os
 import re
 import subprocess
 import sys
+import time
 
 # 强制 stdout/stderr 使用 UTF-8：避免 GBK 控制台下打印中文/符号崩溃
 for _s in (sys.stdout, sys.stderr):
@@ -61,6 +63,15 @@ MIN_PRICE = 3.0          # §5.4 股价下限
 MIN_AVG_VOLUME = 200_000  # §5.4 日均成交量下限
 SMALL_LO, SMALL_HI = 1e9, 10e9   # 小盘市值区间
 MID_HI = 200e9           # 大盘下限（>200B 为大盘）
+
+# ===== 性能与预算阈值（2026-10-18 修复"做多做空分析缓慢"；改阈值须同步 Task 文档）=====
+PREFILTER_MAX = 80          # A2: 取指标前最多保留候选数（仅 live 模式生效）
+PROBE_MAX_TICKERS = 80      # A3: 池外探测差集"取指标验证"的上限（其余只留名）
+PROBE_BUDGET_SECONDS = 150  # A3: 池外探测默认时间预算，超预算返回部分结果 + 未完成入口
+ENTRY_TIMEOUT = 20          # A3: 单入口抓取超时（失败即降级，不重试）
+ENTRY_WORKERS = 3           # A3: 抓页并发上限（对齐 get_market_data --concurrency 的限流口径）
+METRICS_BATCH = 40          # A1: 每次 get_market_data 子进程取数只数
+METRICS_TIMEOUT = 300       # A1: 单批取数超时（原 180s 在 40 只/批下偏短）
 
 
 # ====================== 基础工具 ======================
@@ -182,6 +193,60 @@ def enforce_max_pool(cands):
     return ordered[:MAX_POOL], max(0, len(cands) - MAX_POOL)
 
 
+def prefilter_candidates(cands, *, point_in_time=True, limit=PREFILTER_MAX):
+    """A2: 取指标**前**的低成本预筛（用入口页自带的 price/avg_volume/mcap）。
+    返回 (kept, dropped)。
+
+    前视防护（本任务新增红线 1）：入口页自带数值是**当前快照**，
+    `point_in_time=False`（即 --as-of 历史模式）时**不做任何预筛/按市值截断**，原序返回。
+    """
+    if not point_in_time:
+        return list(cands), 0
+    kept = []
+    for c in cands:
+        price, vol = c.get("price"), c.get("avg_volume")
+        if price is not None and price < MIN_PRICE:
+            continue
+        if vol is not None and vol < MIN_AVG_VOLUME:
+            continue
+        kept.append(c)
+    dropped = len(cands) - len(kept)
+    if limit and len(kept) > limit:
+        if any(c.get("mcap") is not None for c in kept):
+            kept = sorted(kept, key=lambda c: (c.get("mcap") is not None, c.get("mcap") or 0),
+                          reverse=True)[:limit]
+        else:
+            kept = kept[:limit]
+        dropped = len(cands) - len(kept)
+    return kept, dropped
+
+
+def enforce_max_pool_tiered(cands, small_quota=None):
+    """A2b: 分层配额截断 —— 先保证 §5.3 的小盘名额，剩余名额再按市值降序填。
+
+    修 §5.1 与 §5.3 的结构性互斥：原 enforce_max_pool 纯按市值降序截断，
+    必然把小盘全部截掉（实测 小盘占比_pct=0.0 / small_cap_insufficient=True），
+    导致 §5.3 的补充工作（实测补 ~470 只）注定被丢弃。
+    返回 (pool, removed)；≤MAX_POOL 时原样返回。
+    """
+    if len(cands) <= MAX_POOL:
+        return list(cands), 0
+    quota = small_quota if small_quota is not None else int(math.ceil(MAX_POOL * MIN_SMALL_CAP_PCT))
+
+    def by_mcap(seq):
+        return sorted(seq, key=lambda c: (c.get("mcap") is not None, c.get("mcap") or 0), reverse=True)
+
+    small = [c for c in cands if c.get("mcap") is not None and SMALL_LO <= c["mcap"] <= SMALL_HI]
+    small_ids = {id(c) for c in small}
+    rest = [c for c in cands if id(c) not in small_ids]
+    small_pick = by_mcap(small)[:quota]
+    pool = small_pick + by_mcap(rest)[:MAX_POOL - len(small_pick)]
+    if len(pool) < MAX_POOL:  # 小盘名额用不满 → 由 rest 补齐
+        rest_ids = {id(c) for c in pool}
+        pool += by_mcap([c for c in rest if id(c) not in rest_ids])[:MAX_POOL - len(pool)]
+    return pool, max(0, len(cands) - MAX_POOL)
+
+
 def small_cap_stats(cands):
     small = [c for c in cands if c.get("mcap") is not None and SMALL_LO <= c["mcap"] <= SMALL_HI]
     pct = (len(small) / len(cands)) if cands else 0.0
@@ -205,6 +270,39 @@ def supplement_small_cap(cands, small_source):
         added.append(c["ticker"])
     insufficient = small_cap_stats(pool)["pct"] < MIN_SMALL_CAP_PCT
     return pool, {"added": added, "insufficient": insufficient}
+
+
+def supplement_small_cap_quota(cands, small_source, target_small=None):
+    """A2b: 按**最终池的小盘名额**补齐（而非当前池的 20%）。
+
+    原 supplement_small_cap 以"当前池占比 ≥20%"为停止条件：候选池有几百只时，
+    需要补几十上百只小盘才"达标"，而这些补充标的随后又被 §5.1 市值降序截断全部丢弃
+    （实测补 ~470 只、截断移除 416 只、最终小盘占比仍 0.0）。
+    本函数只补到 ceil(min(MAX_POOL, max(len,MIN_POOL)) × 20%) 的名额，
+    且只选入口页**已带市值且落在小盘区间**的标的（不为选择而全量取指标）。
+    """
+    base = min(MAX_POOL, max(len(cands), MIN_POOL))
+    target = target_small if target_small is not None else int(math.ceil(base * MIN_SMALL_CAP_PCT))
+    pool = list(cands)
+    existing = {c["ticker"] for c in pool}
+    have_small = small_cap_stats(pool)["count"]
+    need = max(0, target - have_small)
+    added = []
+    if need:
+        eligible = [c for c in (small_source or [])
+                    if c["ticker"] not in existing
+                    and c.get("mcap") is not None and SMALL_LO <= c["mcap"] <= SMALL_HI]
+        for c in sorted(eligible, key=lambda c: c["mcap"], reverse=True):
+            if len(added) >= need:
+                break
+            pool.append(dict(c, source=c.get("source", "小盘补充")))
+            existing.add(c["ticker"])
+            added.append(c["ticker"])
+    # insufficient 语义（A2b）：按"名额是否凑齐"判定，而非当前池占比——
+    # 补齐后还要过 §5.1 分层截断，用截断前的池算占比会永远判为不足（原实现的假阴性来源）
+    insufficient = (have_small + len(added)) < target
+    return pool, {"added": added, "insufficient": insufficient,
+                  "名额": target, "已有小盘": have_small, "需补": need}
 
 
 def diversity_stats(cands):
@@ -333,13 +431,81 @@ def fetch_url(url, timeout=20):
     return r.text
 
 
+_NUM_SUFFIX = {"K": 1e3, "M": 1e6, "B": 1e9, "T": 1e12}
+
+
+def _parse_number(text):
+    """'256.32B' / '1,234,567' / '$3.20' / '(1.5M)' → float；不可解析返回 None"""
+    if not text:
+        return None
+    t = text.strip().replace(",", "").replace("$", "").replace("%", "")
+    neg = t.startswith("(") and t.endswith(")")
+    if neg:
+        t = t[1:-1]
+    m = re.match(r"^([+-]?\d+(?:\.\d+)?)([KMBT])?$", t)
+    if not m:
+        return None
+    val = float(m.group(1))
+    if m.group(2):
+        val *= _NUM_SUFFIX[m.group(2)]
+    return -val if neg else val
+
+
+def _table_rows(html):
+    """逐行给出 (row_html, 去标签后的单元格文本)，用于按表头列名映射数值"""
+    for row_html in re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.S):
+        cells = [re.sub(r"<[^>]+>", " ", c).strip()
+                 for c in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row_html, re.S)]
+        yield row_html, cells
+
+
+def _sa_row_metrics(html):
+    """A4: 从 stockanalysis 表格按表头列名提取 ticker → {mcap/price/avg_volume}。
+    表头不可得（如 holdings 页无 Market Cap 列）→ 返回 {}，调用方退化为只取 ticker/name。
+    注意：页面自带数值是**当前快照**，历史模式不得用于预筛/排序（见 prefilter_candidates）。
+    """
+    out, headers = {}, None
+    for row_html, cells in _table_rows(html):
+        low = [c.lower() for c in cells]
+        if headers is None:
+            if any("market cap" in c for c in low) or any(c in ("price", "stock price") for c in low):
+                headers = low
+            continue
+        m = re.search(r'href="/stocks/([A-Za-z.\-]{1,6})/?', row_html)
+        if not m:
+            continue
+        rec = {}
+        for i, h in enumerate(headers):
+            if i >= len(cells):
+                break
+            val = _parse_number(cells[i])
+            if val is None:
+                continue
+            if "market cap" in h:
+                rec["mcap"] = val
+            elif h in ("price", "stock price", "close"):
+                rec["price"] = val
+            elif "volume" in h and "market cap" not in h:
+                rec["avg_volume"] = val
+        if rec:
+            out[m.group(1).upper()] = rec
+    return out
+
+
 def parse_stockanalysis_list(html):
-    """stockanalysis 列表/holdings 表：提取 /stocks/TICKER/ 链接与名称"""
+    """stockanalysis 列表/holdings 表：提取 /stocks/TICKER/ 链接与名称；
+    表头可得时一并提取 mcap/price/avg_volume（A4，供取指标前预筛）"""
     out = []
+    metrics = _sa_row_metrics(html)
+    seen = set()
     for m in re.finditer(r'href="/stocks/([A-Za-z.\-]{1,6})/?"[^>]*>([^<]{0,60})<', html):
         ticker, name = m.group(1).upper(), m.group(2).strip()
-        if ticker not in {c["ticker"] for c in out}:
-            out.append({"ticker": ticker, "name": name})
+        if ticker in seen:
+            continue
+        seen.add(ticker)
+        item = {"ticker": ticker, "name": name}
+        item.update(metrics.get(ticker, {}))
+        out.append(item)
     return out
 
 
@@ -353,11 +519,11 @@ def parse_finviz_table(html):
     return out
 
 
-def run_entry(entry, fetcher=None):
+def run_entry(entry, fetcher=None, timeout=ENTRY_TIMEOUT):
     """执行单个入口：fetcher 注入（测试用）或真实网络抓取。返回候选列表，失败抛异常。"""
     if fetcher is not None:
         return fetcher(entry)
-    html = fetch_url(entry["url"])
+    html = fetch_url(entry["url"], timeout=timeout)
     ptype = entry["type"]
     if ptype == "stockanalysis_list":
         return parse_stockanalysis_list(html)
@@ -368,32 +534,123 @@ def run_entry(entry, fetcher=None):
     raise ValueError(f"未知入口类型: {ptype}")
 
 
-def try_entries(entries, fetcher, tried_log):
-    """按固定顺序尝试入口清单，失败降级下一个并留痕"""
+def dedup_entries(entries):
+    """A3: 入口去重（etf-iwm 同时出现在 scan_entries 与 small_cap_entries → 同页抓两次）"""
+    out, seen = [], set()
+    for e in entries:
+        key = (e.get("name"), e.get("url"), e.get("type"))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(e)
+    return out
+
+
+def enabled_entries(entries):
+    """C5（2026-10-18）：跳过 pool_entries.json 里标了 `"disabled": true` 的入口。
+
+    实测 `finviz-screener`：页面能抓到（354 KB、无 Cloudflare 拦截），但表格已改为**客户端渲染**，
+    HTML 里 0 个 quote.ashx 链接（带筛选参数也返回同一页）→ 解析器必然 0 条，白占一次抓取。
+    做空向差异化不再依赖入口页，改由 get_market_data 的新字段承担
+    （short_pct_of_float / short_days_to_cover / ps_ratio / ev_ebitda / fcf_yield / rsi_14）。
+    """
+    return [e for e in entries if not e.get("disabled")]
+
+
+def _is_parallel_safe(entry):
+    """A3: 仅 stockanalysis 类入口可并发；finviz 有反爬历史（实测返回 0 条），保持单发"""
+    return str(entry.get("type", "")).startswith("stockanalysis_")
+
+
+def try_entries(entries, fetcher, tried_log, *, concurrency=1, budget_seconds=0, t0=None):
+    """按清单尝试入口，失败降级下一个并留痕（含每入口耗时）。
+    A3: concurrency>1 且为真实网络时，对 stockanalysis 类入口分批并发（上限由调用方给）；
+        budget_seconds>0 时超预算不再抓后续入口，记 "跳过(时间预算)" 并返回已抓到的部分结果。
+    """
+    t0 = time.time() if t0 is None else t0
     collected = []
-    for entry in entries:
+
+    def _one(entry):
         name = entry.get("name", entry.get("url", "?"))
+        started = time.time()
         try:
-            items = run_entry(entry, fetcher)
-            collected.extend(items)
-            tried_log.append({"name": name, "status": f"成功({len(items)})", "count": len(items)})
+            items = run_entry(entry, fetcher) or []
+            tried_log.append({"name": name, "status": f"成功({len(items)})", "count": len(items),
+                              "elapsed_s": round(time.time() - started, 1)})
+            return items
         except Exception as e:  # noqa: BLE001 — 降级是设计行为，留痕即可
-            tried_log.append({"name": name, "status": f"失败: {type(e).__name__}: {e}", "count": 0})
+            tried_log.append({"name": name, "status": f"失败: {type(e).__name__}: {e}", "count": 0,
+                              "elapsed_s": round(time.time() - started, 1)})
+            return []
+
+    i = 0
+    while i < len(entries):
+        if budget_seconds and (time.time() - t0) > budget_seconds:
+            for e in entries[i:]:
+                tried_log.append({"name": e.get("name", "?"), "status": "跳过(时间预算)", "count": 0})
+            break
+        entry = entries[i]
+        if concurrency > 1 and fetcher is None and _is_parallel_safe(entry):
+            batch = []
+            while i < len(entries) and len(batch) < concurrency and _is_parallel_safe(entries[i]):
+                batch.append(entries[i])
+                i += 1
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=len(batch)) as ex:
+                for items in ex.map(_one, batch):
+                    collected.extend(items)
+        else:
+            collected.extend(_one(entry))
+            i += 1
     return collected
 
 
 # ====================== 指标取数 ======================
 
-def metrics_via_script(tickers, max_per_call=40):
-    """调用 get_market_data.py 批量取指标（≤40 只/次）。返回 {ticker: metrics} 或 {}"""
+# 取数埋点（D3）：只增字段，供 审计 输出；进程内累计，可用 reset_fetch_stats() 清零
+_FETCH_STATS = {"tickers": 0, "calls": 0, "elapsed_s": 0.0, "failures": []}
+
+
+def reset_fetch_stats():
+    _FETCH_STATS.update({"tickers": 0, "calls": 0, "elapsed_s": 0.0, "failures": []})
+
+
+def _child_env():
+    """A1: 给子进程显式 UTF-8，避免 GBK 控制台下中文日志在父进程解码崩溃"""
+    env = dict(os.environ)
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+    env.setdefault("PYTHONUTF8", "1")
+    return env
+
+
+def metrics_via_script(tickers, max_per_call=METRICS_BATCH, end=None, no_cache=False):
+    """调用 get_market_data.py 批量取指标（≤40 只/次）。返回 {ticker: metrics} 或 {}
+
+    end/no_cache（P2-1）：透传 --end/--no-cache —— 历史模式取数走不可变窗口缓存，
+    与 live 30 分钟缓存物理隔离；mcap 等 info 字段仍是当前快照（结果标
+    fundamentals_point_in_time=false 由调用方负责）。
+
+    A1（2026-10-18）：`errors="replace"` + 子进程 UTF-8 环境 —— 原严格 UTF-8 解码在
+    子进程输出 GBK 中文日志时使 `_readerthread` 崩溃、整批结果丢弃（实测首跑 423s 全废）。
+    失败批次记入 _FETCH_STATS["failures"]，已成功批次照常保留。
+    """
     result = {}
     for i in range(0, len(tickers), max_per_call):
         chunk = tickers[i:i + max_per_call]
+        started = time.time()
+        _FETCH_STATS["calls"] += 1
+        _FETCH_STATS["tickers"] += len(chunk)
         try:
+            cmd = [sys.executable, _GET_DATA, "--market", "us_stocks",
+                   "--tickers", ",".join(chunk), "--output", "json"]
+            if end:
+                cmd += ["--end", end]
+            if no_cache:
+                cmd += ["--no-cache"]
             proc = subprocess.run(
-                [sys.executable, _GET_DATA, "--market", "us_stocks",
-                 "--tickers", ",".join(chunk), "--output", "json"],
-                capture_output=True, text=True, timeout=180, encoding="utf-8",
+                cmd,
+                capture_output=True, text=True, timeout=METRICS_TIMEOUT,
+                encoding="utf-8", errors="replace", env=_child_env(),
             )
             payload = json.loads(proc.stdout)
             for item in payload.get("data", []):
@@ -406,9 +663,34 @@ def metrics_via_script(tickers, max_per_call=40):
                         "sector": item.get("sector", ""),
                         "industry": item.get("industry", ""),
                         "name": item.get("name", ""),
+                        # C1/C3/C4（2026-10-18 只增字段）：把做空 / 估值 / 技术面一并带进候选池，
+                        # 让 00_index Step 3+4 不必为这些口径再调一次 get_market_data 或 web_fetch
+                        "pe_ratio": item.get("pe_ratio"),
+                        "pb_ratio": item.get("pb_ratio"),
+                        "roe": item.get("roe"),
+                        "revenue_growth": item.get("revenue_growth"),
+                        "earnings_growth": item.get("earnings_growth"),
+                        "profit_margins": item.get("profit_margins"),
+                        "ps_ratio": item.get("ps_ratio"),
+                        "peg_ratio": item.get("peg_ratio"),
+                        "ev_ebitda": item.get("ev_ebitda"),
+                        "fcf_yield": item.get("fcf_yield"),
+                        "net_debt_to_ebitda": item.get("net_debt_to_ebitda"),
+                        "short_interest": item.get("short_interest"),
+                        "short_days_to_cover": item.get("short_days_to_cover"),
+                        "short_pct_of_float": item.get("short_pct_of_float"),
+                        "rsi_14": item.get("rsi_14"),
+                        "macd_hist": item.get("macd_hist"),
                     }
         except Exception as e:  # noqa: BLE001 — 取数失败不打断，标 data_missing
+            stderr_tail = (getattr(e, "stderr", None) or "")[-300:]
+            _FETCH_STATS["failures"].append({
+                "只数": len(chunk), "错误": f"{type(e).__name__}: {e}",
+                "stderr摘要": stderr_tail,
+            })
             print(f"[WARN] get_market_data.py 批次取数失败({len(chunk)}只): {e}", file=sys.stderr)
+        finally:
+            _FETCH_STATS["elapsed_s"] += time.time() - started
     return result
 
 
@@ -429,11 +711,21 @@ def load_data_file(path):
     return out
 
 
-def enrich_metrics(cands, provider):
-    """用 provider（dict 或 callable）补齐 price/avg_volume/mcap/sector"""
+def enrich_metrics(cands, provider, fill_all=False):
+    """用 provider（dict 或 callable）补齐 price/avg_volume/mcap/sector/industry/name。
+
+    fill_all=False（原语义）：只请求 price 缺失的候选。
+    fill_all=True（A2 收尾补全）：核心字段任一缺失即请求，并**逐字段**补齐——
+    入口页自带的 price/avg_volume/mcap 保留，缺的（多为 avg_volume/mcap/sector）由取数补上。
+    没有这一步，A4 的页面自带 price 会让这些标的被跳过，池内出现大量缺字段（实测 28/40）。
+    """
     if not provider:
         return cands
-    tickers = [c["ticker"] for c in cands if c.get("price") is None]
+    core = ("price", "avg_volume", "mcap")
+    if fill_all:
+        tickers = [c["ticker"] for c in cands if any(c.get(k) is None for k in core)]
+    else:
+        tickers = [c["ticker"] for c in cands if c.get("price") is None]
     if callable(provider):
         data = provider(tickers) or {}
     else:
@@ -441,16 +733,20 @@ def enrich_metrics(cands, provider):
     out = []
     for c in cands:
         m = data.get(c["ticker"])
-        if m and c.get("price") is None:
+        if m:
             c = dict(c)
-            c["price"] = m.get("price")
-            c["avg_volume"] = m.get("avg_volume")
-            if c.get("mcap") is None:
-                c["mcap"] = m.get("mcap", m.get("market_cap"))
-            if not c.get("sector"):
-                c["sector"] = m.get("sector", "")
-            if not c.get("name"):
-                c["name"] = m.get("name", "")
+            for key in ("price", "avg_volume", "mcap", "sector", "industry", "name",
+                        # C1/C3/C4（2026-10-18 只增）做空 / 估值 / 技术面
+                        "pe_ratio", "pb_ratio", "roe", "revenue_growth", "earnings_growth",
+                        "profit_margins", "ps_ratio", "peg_ratio", "ev_ebitda", "fcf_yield",
+                        "net_debt_to_ebitda", "short_interest", "short_days_to_cover",
+                        "short_pct_of_float", "rsi_14", "macd_hist"):
+                if c.get(key) in (None, ""):
+                    val = m.get(key)
+                    if val is None and key == "mcap":
+                        val = m.get("market_cap")
+                    if val is not None:
+                        c[key] = val
         out.append(c)
     return out
 
@@ -478,15 +774,99 @@ def _sector_etf_entries(cfg, sector):
     return out
 
 
+# ===== P1-3 接线（2026-10-18）：--as-of 下把"成员维度"从不可回溯升级为可回溯 =====
+# 数据源＝同目录 fetch_index_constituents.py（SEC NPORT-P 官方档案，双重门控 PIT）。
+# **延迟加载**：live 路径（as_of=None）完全不 import、不取数，生产行为零变化。
+_CONSTITUENTS_SCRIPT = os.path.join(_SCRIPT_DIR, "fetch_index_constituents.py")
+
+
+def constituents_layer(as_of):
+    """取 as-of 当期官方成分档案；任何异常都降级为 available=False（不抛、不假装有成分）。"""
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("fetch_index_constituents",
+                                                      _CONSTITUENTS_SCRIPT)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.constituents_for_asof(as_of)
+    except Exception as e:
+        return {"available": False, "requested_as_of": as_of,
+                "note": f"成分层不可用（{type(e).__name__}: {e}）→ 成员维度退回 point_in_time=false"}
+
+
+def apply_constituents(cands, info, mode="annotate"):
+    """按当期官方成分给候选打 `in_constituents` 标记；mode=filter 时剔除明确 False。
+
+    三态判定（**没有第三态就会把小盘/板块候选误判成"不是成员"**）：
+      True    ticker ∈ 当期成分
+      False   ticker ∈ 覆盖范围参照集（当期 ∪ 最新一期）但当期不在 → 幸存者偏差信号
+      None    覆盖范围外（小盘 / 板块 ETF 候选）→ unknown，不参与判定、filter 模式不剔除
+    返回 (candidates, stats)。
+    """
+    cur = {str(t).upper() for t in info.get("symbols", [])}
+    scope = {str(t).upper() for t in info.get("scope_symbols", [])}
+    kept, dropped, n_t, n_f, n_u = [], [], 0, 0, 0
+    for c in cands:
+        t = str(c.get("ticker") or "").upper()
+        if t in cur:
+            flag = True
+            n_t += 1
+        elif t in scope:
+            flag = False
+            n_f += 1
+        else:
+            flag = None
+            n_u += 1
+        c["in_constituents"] = flag
+        if mode == "filter" and flag is False:
+            dropped.append(c.get("ticker"))
+            continue
+        kept.append(c)
+    stats = {"mode": mode, "当期成员命中": n_t, "覆盖范围内但当期非成员": n_f,
+             "覆盖范围外(unknown)": n_u, "filter剔除数": len(dropped),
+             "filter剔除样本": dropped[:12]}
+    return kept, stats
+
+
+def _constituents_brief(info, stats):
+    """结果 JSON 里只留口径与计数，**不留 symbols 明细**（900 个 ticker 会撑爆报告）。"""
+    if info is None:
+        return None
+    return {
+        "available": bool(info.get("available")),
+        "source": "sec_nport_p:SPY+MDY",
+        "requested_as_of": info.get("requested_as_of"),
+        "holdings_as_of": info.get("holdings_as_of"),
+        "lag_days": info.get("lag_days"),
+        "match_rate": info.get("match_rate"),
+        "members_total": info.get("members_total"),
+        "unmatched_count": info.get("unmatched_count"),
+        "failed_indexes": info.get("failed_indexes", []),
+        "note": info.get("note"),
+        "判定": stats,
+    }
+
+
 def generate(mode="auto", direction="long", sector=None, user_tickers=None, *,
              entries_config=None, fetcher=None, data_provider=None, seed_pool=None,
-             small_cap_source=None):
-    """候选池生成主流程（§一优先级链 + §5 质量控制，全程留痕）"""
+             small_cap_source=None, as_of=None, prefilter_max=PREFILTER_MAX,
+             budget_seconds=0, constituents="annotate"):
+    """候选池生成主流程（§一优先级链 + §5 质量控制，全程留痕）
+
+    as_of（P2-1/A2）：历史模式标记。非 None 时**禁用取指标前的预筛与按市值截断**
+    ——入口榜单页自带 price/avg_volume/mcap 是当前快照，用它筛＝引入前视。
+
+    constituents（P1-3 接线，仅 as_of 非 None 时生效）：`off` 不做成分对照；
+    `annotate`（默认）给候选打 in_constituents 三态标记并留痕；`filter` 额外剔除
+    "覆盖范围内但当期非成员"的候选（＝今天榜单有、as-of 当期官方成分没有）。
+    """
     cfg = entries_config or load_config()
     global _ALIAS
     _ALIAS = cfg.get("sector_alias", {})
     seed_pool = seed_pool or load_seed_pool()
     tried_log, degrade_log = [], []
+    t0 = time.time()
+    conc = ENTRY_WORKERS if fetcher is None else 1
 
     candidates = []
     mode_used = None
@@ -501,7 +881,9 @@ def generate(mode="auto", direction="long", sector=None, user_tickers=None, *,
     # ---- 方式一：板块衍生 ----
     if mode_used is None and sector:
         local = _sector_seed_candidates(cfg, sector)
-        etf_cands = try_entries(_sector_etf_entries(cfg, sector), fetcher, tried_log)
+        etf_cands = try_entries(dedup_entries(enabled_entries(_sector_etf_entries(cfg, sector))),
+                                fetcher, tried_log,
+                                concurrency=conc, budget_seconds=budget_seconds, t0=t0)
         candidates = normalize_candidates(
             [c if isinstance(c, dict) else c for c in local] + etf_cands,
             source="板块衍生",
@@ -513,7 +895,9 @@ def generate(mode="auto", direction="long", sector=None, user_tickers=None, *,
 
     # ---- 方式二：全网扫描 ----
     if mode_used is None and mode in ("auto", "scan"):
-        scan_cands = try_entries(cfg.get("scan_entries", []), fetcher, tried_log)
+        scan_cands = try_entries(dedup_entries(enabled_entries(cfg.get("scan_entries", []))),
+                                 fetcher, tried_log,
+                                 concurrency=conc, budget_seconds=budget_seconds, t0=t0)
         merged = candidates + scan_cands
         candidates = normalize_candidates(merged, source="全网扫描")
         if len(candidates) < ACCEPT_MIN:
@@ -533,6 +917,22 @@ def generate(mode="auto", direction="long", sector=None, user_tickers=None, *,
         if mode_used is None:
             mode_used = "固定池兜底"
 
+    # ---- P1-3 接线：成员维度分段标记（仅 --as-of；live 完全不碰这层）----
+    # 档案可用 → 成员维度可回溯（members_point_in_time=true，引 holdings_as_of）；
+    # 档案不可用（as-of 早于 2019-09-30 / 取数失败）→ 退回原语义，只留 note。
+    const_info = const_stats = None
+    if as_of and constituents != "off":
+        const_info = constituents_layer(as_of)
+        if const_info.get("available"):
+            candidates, const_stats = apply_constituents(candidates, const_info,
+                                                         mode=constituents)
+
+    # ---- A2: 取指标**前**预筛截断（仅 live；--as-of 历史模式禁用，防前视）----
+    point_in_time = as_of is None
+    entry_count = len(candidates)
+    candidates, prefilter_dropped = prefilter_candidates(
+        candidates, point_in_time=point_in_time, limit=prefilter_max)
+
     # ---- §5.4 排除（先剔除不合格，再做质量控制补充）----
     candidates = enrich_metrics(candidates, data_provider)
     candidates, excluded = apply_exclusion_rules(candidates)
@@ -543,15 +943,28 @@ def generate(mode="auto", direction="long", sector=None, user_tickers=None, *,
         candidates, audit_div = supplement_diversity(candidates, seed_pool["by_sector"])
         if small_cap_source is None and cfg.get("small_cap_entries"):
             small_cap_source = normalize_candidates(
-                try_entries(cfg["small_cap_entries"], fetcher, tried_log), source="小盘入口")
-        candidates, audit_small = supplement_small_cap(candidates, small_cap_source or [])
-        # 补充进来的标的同样要过指标与排除（保持"池内全部合格"不变式）
+                try_entries(dedup_entries(enabled_entries(cfg["small_cap_entries"])),
+                            fetcher, tried_log,
+                            concurrency=conc, budget_seconds=budget_seconds, t0=t0),
+                source="小盘入口")
+        # A2b: 按最终池的小盘名额补齐（原按"当前池 20%"补齐 → 补几百只又被 §5.1 截断丢弃）
+        candidates, audit_small = supplement_small_cap_quota(candidates, small_cap_source or [])
+        # 补充标的同样要过指标与排除（enrich_metrics 只请求缺 price 的增量，不重取全池）
         candidates = enrich_metrics(candidates, data_provider)
         candidates, excluded2 = apply_exclusion_rules(candidates)
         excluded = excluded + excluded2
 
-    # ---- §5.1 数量控制（最后截断）----
-    candidates, removed = enforce_max_pool(candidates)
+    # ---- §5.1 数量控制（A2b: 分层配额截断，先保小盘名额）----
+    candidates, removed = enforce_max_pool_tiered(candidates)
+
+    # ---- A2 收尾补全：只对最终池（≤40）补全缺字段，再过一次 §5.4 保持"池内全部合格"----
+    # （A4 让入口页自带 price/avg_volume/mcap，中段 enrich 会跳过它们 → 这里逐字段补齐，
+    #   否则池内会出现大量缺字段；只对 ≤40 只做，成本 1-2 批）
+    candidates = enrich_metrics(candidates, data_provider, fill_all=True)
+    for c in candidates:
+        c.pop("data_missing", None)
+    candidates, excluded3 = apply_exclusion_rules(candidates)
+    excluded = excluded + excluded3
 
     # ---- 汇总输出（字段与报告"候选池摘要"对应）----
     for c in candidates:
@@ -567,9 +980,15 @@ def generate(mode="auto", direction="long", sector=None, user_tickers=None, *,
         "entries_tried": tried_log,
         "候选池": candidates,
         "排除": excluded,
+        # P1-3 接线：成员维度独立标记（None=未启用，即 live 或 --constituents off）
+        "constituents": _constituents_brief(const_info, const_stats),
+        "members_point_in_time": bool(const_info and const_info.get("available")),
         "统计": {
             "总数": len(candidates),
             "小盘占比_pct": round(stats["pct"] * 100, 1),
+            # 只增字段：最终池占比是否达标（small_cap_insufficient 语义＝小盘"名额"未凑齐；
+            # 二者可能不一致，例如收尾 §5.4 又排掉一只小盘 → 名额凑齐但占比略低于 20%）
+            "小盘占比达标": stats["pct"] >= MIN_SMALL_CAP_PCT,
             "small_cap_insufficient": audit_small["insufficient"],
             "板块数": div["count"],
             "板块": div["sectors"],
@@ -581,20 +1000,50 @@ def generate(mode="auto", direction="long", sector=None, user_tickers=None, *,
             "多样性补充": audit_div["added"],
             "截断移除数": removed,
             "降级记录": degrade_log,
+            # ---- 2026-10-18 性能修复新增（只增字段，不改既有键）----
+            "入口原始数": entry_count,
+            "预筛剔除数": prefilter_dropped,
+            "预筛生效": point_in_time,
+            "小盘名额": audit_small.get("名额"),
+            "小盘需补": audit_small.get("需补"),
+            "指标取数只数": _FETCH_STATS["tickers"],
+            "指标取数批次": _FETCH_STATS["calls"],
+            "指标取数耗时_s": round(_FETCH_STATS["elapsed_s"], 1),
+            "取数失败批次": _FETCH_STATS["failures"],
+            "收尾补全排除数": len(excluded3),
+            "elapsed_s": round(time.time() - t0, 1),
         },
     }
 
 
 def probe(base_pool_tickers, *, entries_config=None, fetcher=None, data_provider=None,
-          seed_pool=None, max_merge=MAX_MERGE):
-    """§七 池外探测：固定入口清单取当期全市场清单 → 差集 → 指标验证 → 并入(≤10) → 留痕"""
+          seed_pool=None, max_merge=MAX_MERGE, max_tickers=PROBE_MAX_TICKERS,
+          budget_seconds=PROBE_BUDGET_SECONDS, entry_names=None, concurrency=ENTRY_WORKERS):
+    """§七 池外探测：固定入口清单取当期全市场清单 → 差集 → 指标验证 → 并入(≤10) → 留痕
+
+    A3（2026-10-18）：
+      - 入口去重（etf-iwm 重复）+ 可选 entry_names 子集；
+      - stockanalysis 类入口分批并发（上限 ENTRY_WORKERS），finviz 单发；
+      - budget_seconds 超预算 → 返回已抓到的部分结果 + 未完成入口留痕（不再被外层 timeout 全杀）；
+      - 差集按市值排序只验证前 max_tickers 只（实测 802 只全验证只为并入 10 只），
+        其余只留名并记 未验证候选数。
+    """
     cfg = entries_config or load_config()
     seed_pool = seed_pool or load_seed_pool()
     tried_log = []
+    t0 = time.time()
 
-    all_entries = list(cfg.get("scan_entries", [])) + list(cfg.get("small_cap_entries", [])) \
+    configured = list(cfg.get("scan_entries", [])) + list(cfg.get("small_cap_entries", [])) \
         + list(cfg.get("probe_extra_entries", []))
-    raw = try_entries(all_entries, fetcher, tried_log)
+    active = enabled_entries(configured)
+    disabled_names = [e.get("name") for e in configured if e.get("disabled")]
+    all_entries = dedup_entries(active)
+    if entry_names:
+        wanted = {str(n).strip() for n in entry_names if str(n).strip()}
+        all_entries = [e for e in all_entries if e.get("name") in wanted]
+    raw = try_entries(all_entries, fetcher, tried_log,
+                      concurrency=concurrency if fetcher is None else 1,
+                      budget_seconds=budget_seconds, t0=t0)
     outside = normalize_candidates(raw, source="池外探测")
 
     # 与固定池重复的 → 标注来源固定池，不重复计数
@@ -603,14 +1052,25 @@ def probe(base_pool_tickers, *, entries_config=None, fetcher=None, data_provider
     diff = [c for c in outside if c["ticker"] not in base_set and c["ticker"] not in seed_tickers]
     seed_overlaps = [c["ticker"] for c in outside if c["ticker"] in seed_tickers]
 
+    # A3: 只对市值可得的差集前 N 只取指标验证，其余留名（低成本预筛，仅 live）
+    unverified = []
+    if max_tickers and len(diff) > max_tickers:
+        ranked = sorted(diff, key=lambda c: (c.get("mcap") is not None, c.get("mcap") or 0),
+                        reverse=True)
+        diff, unverified = ranked[:max_tickers], ranked[max_tickers:]
+
     diff = enrich_metrics(diff, data_provider)
     diff, excluded = apply_exclusion_rules(diff)
 
     pool = [{"ticker": t} for t in base_pool_tickers]
     pool, merged, not_merged = merge_outside(pool, diff, max_merge=max_merge)
+    # 收尾补全：只补真正并入的 ≤max_merge 只（页面自带字段保留，缺的 sector/mcap 等补齐）
+    merged = enrich_metrics(merged, data_provider, fill_all=True)
 
     return {
-        "入口数": len(all_entries),
+        "入口数": len(configured),
+        "去重后入口数": len(all_entries),
+        "禁用入口": disabled_names,          # C5：pool_entries.json 里 disabled=true 的入口
         "入口尝试": tried_log,
         "差集候选数": len(diff),
         "并入": merged,
@@ -623,10 +1083,47 @@ def probe(base_pool_tickers, *, entries_config=None, fetcher=None, data_provider
             "排除数": len(excluded),
             "单次并入上限": max_merge,
         },
+        # ---- 2026-10-18 性能修复新增（只增字段）----
+        "审计": {
+            "原始条目数": len(raw),
+            "差集全量数": len(diff) + len(excluded) + len(unverified),
+            "未验证候选数": len(unverified),
+            "未验证候选": [c["ticker"] for c in unverified[:50]],
+            "指标取数只数": _FETCH_STATS["tickers"],
+            "指标取数批次": _FETCH_STATS["calls"],
+            "指标取数耗时_s": round(_FETCH_STATS["elapsed_s"], 1),
+            "取数失败批次": _FETCH_STATS["failures"],
+            "时间预算_s": budget_seconds,
+            "elapsed_s": round(time.time() - t0, 1),
+        },
     }
 
 
 # ====================== CLI ======================
+
+def _summary_line(result, is_probe, out_path):
+    """A6: --out 模式下 stdout 只打印一行摘要（完整结果已落盘，避免大 JSON 撑爆上下文）"""
+    audit = result.get("审计", {})
+    st = result.get("统计", {})
+    parts = []
+    if is_probe:
+        parts.append(f"池外探测 入口{result.get('入口数')}（去重后 {result.get('去重后入口数')}）")
+        parts.append(f"差集{result.get('差集候选数')} 并入{st.get('并入数')} "
+                     f"未并入{st.get('未并入数')} 排除{st.get('排除数')}")
+        parts.append(f"未验证{audit.get('未验证候选数', 0)}")
+    else:
+        parts.append(f"候选池 mode={result.get('mode_used')} 方向={result.get('direction')} "
+                     f"板块={result.get('sector')}")
+        parts.append(f"候选{st.get('总数')} 小盘{st.get('小盘占比_pct')}% 板块{st.get('板块数')}")
+        parts.append(f"预筛剔除{audit.get('预筛剔除数', 0)} 截断移除{audit.get('截断移除数', 0)}")
+    parts.append(f"取数{audit.get('指标取数只数', 0)}只/{audit.get('指标取数批次', 0)}批"
+                 f"/{audit.get('指标取数耗时_s', 0)}s")
+    if audit.get("取数失败批次"):
+        parts.append(f"取数失败{len(audit['取数失败批次'])}批")
+    parts.append(f"总耗时{audit.get('elapsed_s', 0)}s")
+    parts.append(f"已写入 {out_path}")
+    return " | ".join(parts)
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -649,9 +1146,35 @@ def main():
                         help="禁用网络入口（仅固定池/用户列表/离线指标）")
     parser.add_argument("--config", default=None, help="入口配置文件（默认同目录 pool_entries.json）")
     parser.add_argument("--output", default="text", choices=["text", "json"])
+    # ---------- 历史模式 / 沙箱（P2-1；缺省=现有生产行为） ----------
+    parser.add_argument("--seed-pool", dest="seed_pool", default=None,
+                        help="种子池 JSON 路径（回放副本沙箱化；缺省=同目录 stock_pool.json）")
+    parser.add_argument("--as-of", dest="as_of", default=None, metavar="YYYY-MM-DD",
+                        help="历史模式：向 get_market_data 透传 --end（入口榜单页仍是当前页，结果标 point_in_time=false）")
+    parser.add_argument("--constituents", dest="constituents", default="annotate",
+                        choices=["off", "annotate", "filter"],
+                        help="仅 --as-of 生效（P1-3 接线）：annotate=按 SEC NPORT-P 官方成分打 "
+                             "in_constituents 三态标记（默认）；filter=额外剔除「覆盖范围内但当期非成员」"
+                             "的候选；off=不做成分对照（成员维度退回不可回溯）")
+    parser.add_argument("--no-cache", dest="no_cache", action="store_true",
+                        help="透传 get_market_data --no-cache")
+    # ---------- 性能与预算（2026-10-18 修复"做多做空分析缓慢"） ----------
+    parser.add_argument("--out", dest="out", default=None,
+                        help="结果 JSON 落盘路径；给了 --out 时 stdout 只打印一行摘要（A6）")
+    parser.add_argument("--prefilter-max", dest="prefilter_max", type=int, default=PREFILTER_MAX,
+                        help=f"取指标前最多保留候选数（默认 {PREFILTER_MAX}，0=不截断；--as-of 下自动禁用）")
+    parser.add_argument("--probe-max-tickers", dest="probe_max_tickers", type=int,
+                        default=PROBE_MAX_TICKERS,
+                        help=f"池外探测差集取指标上限（默认 {PROBE_MAX_TICKERS}，0=全量验证）")
+    parser.add_argument("--probe-entries", dest="probe_entries", default=None,
+                        help="池外探测入口子集，逗号分隔（如 sa-sp500,sa-smallcap）")
+    parser.add_argument("--budget-seconds", dest="budget_seconds", type=int, default=None,
+                        help=f"抓页时间预算，超预算返回部分结果+未完成入口"
+                             f"（generate 默认 0=不限，probe 默认 {PROBE_BUDGET_SECONDS}）")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
+    seed_pool = load_seed_pool(args.seed_pool) if args.seed_pool else None
 
     if args.entry_name:
         all_entries = (cfg.get("scan_entries", []) + cfg.get("small_cap_entries", [])
@@ -680,19 +1203,59 @@ def main():
     provider = None
     if args.data_file:
         provider = load_data_file(args.data_file)
+    elif args.as_of or args.no_cache:
+        def provider(tickers, max_per_call=40):
+            return metrics_via_script(tickers, max_per_call,
+                                      end=args.as_of, no_cache=args.no_cache)
     else:
         provider = metrics_via_script
 
+    reset_fetch_stats()
+    budget = args.budget_seconds if args.budget_seconds is not None else (
+        PROBE_BUDGET_SECONDS if args.probe_only else 0)
     if args.probe_only:
         with open(args.probe_only, "r", encoding="utf-8") as f:
             base = load_pool_json(json.load(f))
-        result = probe(base, entries_config=cfg, fetcher=fetcher, data_provider=provider)
+        result = probe(base, entries_config=cfg, fetcher=fetcher,
+                       data_provider=provider, seed_pool=seed_pool,
+                       max_tickers=args.probe_max_tickers, budget_seconds=budget,
+                       entry_names=(args.probe_entries.split(",") if args.probe_entries else None))
     else:
         result = generate(
             mode=args.mode, direction=args.direction, sector=args.sector,
             user_tickers=args.tickers, entries_config=cfg, fetcher=fetcher,
-            data_provider=provider, small_cap_source=None,
+            data_provider=provider, small_cap_source=None, seed_pool=seed_pool,
+            as_of=args.as_of, prefilter_max=args.prefilter_max, budget_seconds=budget,
+            constituents=args.constituents,
         )
+
+    # 历史模式元信息（只增字段）。两个维度分开标：
+    #   point_in_time        入口榜单页本身能否回溯（stockanalysis/ETF holdings 页只有当前页 → False）
+    #   members_point_in_time 成员集合能否回溯（P1-3：SEC NPORT-P 档案可用 → True）
+    if args.as_of:
+        result["requested_end"] = args.as_of
+        result["point_in_time"] = False
+        if result.get("members_point_in_time"):
+            c = result.get("constituents") or {}
+            result["point_in_time_note"] = (
+                "入口榜单页仍为当前页（point_in_time=false），但**成员集合已按 SEC NPORT-P 官方档案"
+                f"回溯**：持仓期末 {c.get('holdings_as_of')}（滞后 {c.get('lag_days')} 天，"
+                f"匹配率 {c.get('match_rate')}）——榜单里「当期有、当时不是成员」的标的已在 "
+                "in_constituents=false 标出（--constituents filter 可直接剔除）")
+        else:
+            result["point_in_time_note"] = ("入口榜单（指数/ETF holdings 页）为当前页，"
+                                            "价格/流动性指标已按 --end 回溯，榜单成员不可回溯"
+                                            "（成分档案不可用："
+                                            + str((result.get("constituents") or {}).get("note")) + "）")
+
+    # A6: 显式 --out 时完整结果落盘，stdout 只给一行摘要（默认行为不变，保护 subprocess 消费者）
+    if args.out:
+        out_dir = os.path.dirname(os.path.abspath(args.out))
+        os.makedirs(out_dir, exist_ok=True)
+        with open(args.out, "w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii=False, indent=2)
+        print(_summary_line(result, bool(args.probe_only), args.out))
+        return
 
     if args.output == "json":
         print(json.dumps(result, ensure_ascii=False, indent=2))
@@ -703,6 +1266,10 @@ def main():
         print("=" * 60)
         print(f"  差集候选: {result['差集候选数']} 只  "
               f"并入: {stats['并入数']}  未并入: {stats['未并入数']}  排除: {stats['排除数']}")
+        audit = result.get("审计", {})
+        print(f"  取数: {audit.get('指标取数只数', 0)}只/{audit.get('指标取数批次', 0)}批"
+              f"  未验证: {audit.get('未验证候选数', 0)}  时间预算: {audit.get('时间预算_s')}s"
+              f"  总耗时: {audit.get('elapsed_s', 0)}s")
         for e in result.get("入口尝试", []):
             print(f"    {e['name']:18s} {e['status']}")
         for n in result.get("未并入", [])[:10]:
@@ -713,6 +1280,10 @@ def main():
         print(f"候选池生成  mode={result.get('mode_used')}  方向={result.get('direction')}  板块={result.get('sector')}")
         print("=" * 60)
         print(f"  候选总数: {stats['总数']}  小盘占比: {stats['小盘占比_pct']}%  板块数: {stats['板块数']}")
+        _a = result.get("审计", {})
+        print(f"  取数: {_a.get('指标取数只数', 0)}只/{_a.get('指标取数批次', 0)}批"
+              f"/{_a.get('指标取数耗时_s', 0)}s  预筛剔除: {_a.get('预筛剔除数', 0)}"
+              f"  小盘名额: {_a.get('小盘名额')}  总耗时: {_a.get('elapsed_s', 0)}s")
         if result.get("排除"):
             print(f"  排除 {len(result['排除'])} 只:")
             for e in result["排除"][:10]:

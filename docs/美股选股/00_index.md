@@ -189,49 +189,74 @@ AI 按以下矩阵判断下一个可能轮动/流出的板块。**满足 2 条�
 
 ### Step 2：确定候选股池（代码化执行，2026-09-26 起）
 
-**首选路径**：执行候选池生成脚本。AI 不再手工扫描网页挑入口、算差集、手工截断：
+**首选路径**：执行候选池生成脚本。AI 不再手工扫描网页挑入口、算差集、手工截断。
+
+**可直接复制的命令（2026-10-18 起：`--out` 让结果落盘，stdout 只回一行摘要，不再撑爆上下文）**：
 
 ```bash
-python scripts/generate_candidate_pool.py --mode auto --direction <long|short> --sector "<Step 1.5 预测或用户指定的板块>" --output json
+# ① 候选池（一次任务只跑一次）
+python scripts\generate_candidate_pool.py --mode auto --direction <long|short> --sector "<板块>" --out tests\candidate_pool_<direction>_<YYYYMMDD>.json --budget-seconds 150
+
+# ② 池外探测（一次任务只跑一次，输入 ① 的产物；默认时间预算 150s）
+python scripts\generate_candidate_pool.py --probe-only tests\candidate_pool_<direction>_<YYYYMMDD>.json --out tests\probe_<direction>_<YYYYMMDD>.json
 ```
+
+- 工具调用超时给 **240 s** 即可：脚本内部 `--budget-seconds` 会先返回**部分结果 + 未完成入口留痕**，不会被外层 timeout 全杀（教训：2026-10-17 一次 `--probe-only` 被 600 s 超时杀掉全部工作）。
+- 脚本已自带 UTF-8 与子进程 GBK 容错，**不需要** `set PYTHONIOENCODING`、不需要包 bat、不需要后台轮询。
+- 需要调节验证规模：`--prefilter-max 80`（取指标前保留候选数）、`--probe-max-tickers 80`（差集验证上限）、`--probe-entries sa-sp500,sa-smallcap`（入口子集）、`--data-file <metrics.json>`（复用已取指标，避免二次取数）。
+- 多行 Python 一律写成 `tests/*.py` 再执行（`cmd.exe` 会在换行处截断命令）。
 
 **AI 的动作序列**：
 1. 确定 `--direction`（用户输入）与 `--sector`（Step 1.5 预测流出/轮入板块，或用户指定板块）
-2. 执行脚本（内部按 `选股操作手册.md` §一 优先级链 + §五 质量控制硬执行：板块衍生 → 全网扫描 → 固定池兜底；候选 >40 截断、小盘 ≥20%、板块 ≥3 全部自动并留痕）
-3. 读取输出 JSON，做**定性处理**：§5.4 的负面新闻/退市警告定性排除、命中标准的最终判定
+2. 执行脚本（内部按 `选股操作手册.md` §一 优先级链 + §五 质量控制硬执行：板块衍生 → 全网扫描 → 固定池兜底；候选 >40 分层配额截断、小盘名额、板块 ≥3 全部自动并留痕）
+3. 读取 `--out` 产物，做**定性处理**：§5.4 的负面新闻/退市警告定性排除、命中标准的最终判定
 4. 把 `统计` / `审计` / `排除` 字段对应抄入 Step 9 的 `候选池摘要`（`总候选数` = `统计.总数`）
 
-**脚本失败的降级纪律**：只允许 `--mode seed --no-network`（固定池兜底 + 入口失败留痕），**禁止回退到手工 web_fetch 扫描生成候选池**（教训：2026-09-25 两期做空报告手工扫描导致池子随机）。
+**调用预算与失败纪律（硬约束）**：候选池 **1 次** + 池外探测 **1 次**；同一命令**最多重试 1 次**，再失败即用 `--mode seed --no-network`（固定池兜底 + 入口失败留痕）继续。**禁止**回退到手工 web_fetch 扫描生成候选池（教训：2026-09-25 两期做空报告手工扫描导致池子随机）、**禁止**读脚本源码猜用法、**禁止**自写 bat 后台轮询（教训：2026-10-17 因此多花 20+ 分钟）。
+
+**脚本内部口径（2026-10-18 变更，抄字段时注意）**：
+- 取指标**前**先用入口页自带的 price / 成交量 / 市值预筛并截断到 `--prefilter-max`（默认 80）→ 计入 `审计.预筛剔除数`；`--as-of` 历史模式**自动禁用**（`审计.预筛生效=false`，防前视）。
+- §5.1 截断改为**分层配额**：先保 §5.3 的小盘名额（40 只中 8 只），剩余名额再按市值降序填 → `统计.小盘占比达标`＝最终池是否达标，`small_cap_insufficient`＝小盘名额是否凑齐（二者可能不一致）。
+- 截断后对最终池（≤40）做一次**收尾补全**取数并重跑 §5.4 → `审计.收尾补全排除数`。
+- 池外探测只对差集前 `--probe-max-tickers`（默认 80）只做指标验证，其余只留名 → `审计.未验证候选数` 必须如实抄入报告，**不得当作已验证**。
 
 > **⚠️ 池外探测（每次必做）**：在脚本生成的候选池基础上执行 `--probe-only <候选池.json>`（见 `选股操作手册.md` §七），把当期新标的纳入视野。**固定池是种子，不是边界。**
 
 > **做空方向适配**：`--sector` 以预测流出板块和其他过热板块为主。做空方向的基本面过滤（Step 4）使用高估/泡沫相关口径，而非做多方向的低估 / 增长条件。
 
-**候选池大小控制**：由脚本硬执行（20-40 只，>40 按市值从大到小截断）。
+**候选池大小控制**：由脚本硬执行（20-40 只；>40 按分层配额截断——先保小盘名额，其余按市值从大到小）。
 
 ### Step 3：获取候选池结构化数据
 
 使用 `get_market_data.py` 获取候选池中所有标的的价格数据。
 
 ```bash
-python scripts/get_market_data.py --market us_stocks --tickers TICKER1,TICKER2,... --output json
+python scripts/get_market_data.py --market us_stocks --tickers TICKER1,TICKER2,... --out tests\pool_metrics_<YYYYMMDD>.json
 ```
 
-> 如果候选池超过 30 只，分两次获取。
+> **用 `--out` 落盘**：stdout 只回一行摘要（`count / 失败数 / 截至`），随后按需读文件里的字段，**不要把整份 JSON 读进上下文**（教训：2026-10-17 大 JSON 直接打到 stdout 导致上下文膨胀）。
+> **Step 3 与 Step 4 共用这同一次调用**（同一 `--out` 文件）：候选池 ≤40 只时**只调用一次**，脚本内部已处理并发（3）与重试（3）；确需分批最多 2 次，**禁止逐只循环调用**。
+> 需要精简输出时可加 `--minimal` 或 `--fields price,change_pct,ma_50,ma_200,pct_52w,pe_ratio,roe,revenue_growth`。
 
-**获取的数据字段**：price, change_pct, ma_20, ma_50, ma_200, high_52w, low_52w, pct_52w, volume
+**获取的数据字段**：price, change_pct, ma_20, ma_50, ma_200, high_52w, low_52w, pct_52w, volume, **rsi_14, macd, macd_signal, macd_hist, atr_14**（2026-10-18 起同一次调用即返回，Step 5 不必再取数）
 
 ### Step 4：基本面快速过滤
 
-对候选池中的每只标的取基本面指标。**优先一次批量取数**（`get_market_data.py` 已返回 `pe_ratio` / `pb_ratio` / `roe` / `revenue_growth` / `sector` / `industry`）。
+对候选池中的每只标的取基本面指标。**复用 Step 3 的那一次批量取数结果**，不要重复取数。`get_market_data.py` 一次调用即返回（2026-10-18 起字段大幅补齐）：
+
+- 原有：`pe_ratio` / `pb_ratio` / `roe` / `revenue_growth` / `sector` / `industry` / `market_cap`
+- **新增估值与质量**：`ps_ratio` / `peg_ratio` / `ev_ebitda`（`ev_ebitda_derived=true` ＝按 EV=市值+总债务−现金 本地推算）/ `earnings_growth`（EPS 增速）/ `profit_margins` / `fcf_yield`（FCF 收益率）/ `net_debt_to_ebitda`
+- **新增做空口径**：`short_interest` / `short_interest_prior` / `short_pct_of_float`（小数）/ `short_days_to_cover`（回补天数）
 
 ```bash
-# 首选：批量取数（一次覆盖候选池全部 ticker，可与 Step 3 合并为同一次调用）
-python scripts/get_market_data.py --market us_stocks --tickers TICKER1,TICKER2,... --output json
+# 需要"相对行业中位数"时加 --sector-median（样本＝本次批次内同板块，<3 只不写）
+python scripts/get_market_data.py --market us_stocks --tickers TICKER1,TICKER2,... --sector-median --out tests\pool_metrics_<YYYYMMDD>.json
 ```
 
-> 脚本不返回的字段（PEG / EPS 增速 / FCF 收益率 / 净债务·EBITDA）：用 `web_fetch` 直取 stockanalysis.com 或 finviz 的财务摘要页补齐。
-> 取数缺失（`pe_ratio` / `roe` / `revenue_growth` 为 null）→ 标记该标的 `fundamental_missing` 并降一档评分，**不得编造**。`web_search` 仅用于发现 URL（本环境只返回标题与链接、无正文）。
+> **上表 GARP / 估值泡沫标准里的 PEG、EPS 增速、FCF 收益率、净债务·EBITDA、P/S、EV/EBITDA 现在都有脚本字段**（`peg_ratio` / `earnings_growth` / `fcf_yield` / `net_debt_to_ebitda` / `ps_ratio` / `ev_ebitda`）→ **不要再 web_fetch 财务页**。
+> 仍无通道的：融券费率与可融券余额（仅 IB 实时）、期权链 IV、机构 13F 明细、**全市场**行业中位数（脚本只给批次内中位数）。
+> 取数缺失（字段为 null）→ 标记该标的 `fundamental_missing` 并降一档评分，**不得编造**。`web_search` 仅用于发现 URL（本环境只返回标题与链接、无正文）。
+> **缓存时效**：info 缓存 12 小时，缓存里可能是改前的旧结构（新字段为 null）→ 急需全部新字段时加 `--no-cache`（现已真正穿透 info 缓存）。
 
 **过滤规则**（满足以下至少 3 条即进入下一轮）：
 
@@ -263,6 +288,8 @@ python scripts/get_market_data.py --market us_stocks --tickers TICKER1,TICKER2,.
 ### Step 5：技术面过滤
 
 对通过基本面过滤的标的，按以下规则评分（每项 1-5 分）。
+
+> **取数**：`rsi_14` / `macd` / `macd_signal` / `macd_hist` / `atr_14` 与均线、52 周分位**来自 Step 3 同一次 `get_market_data.py` 调用**（本地由 K 线计算，历史模式下按 `--end` 截断，无前视）→ 本步**不需要任何额外取数或 web_fetch**。死叉/空头排列可用 `macd_hist < 0` 且 `price < ma_50 < ma_200` 佐证；止损距离用 `atr_14`。
 
 ##### 【做多方向】
 
@@ -400,7 +427,7 @@ python scripts/get_market_data.py --fetch-url product-all-info --ticker TICKER -
 |---|---------|---------|---------|
 | 1 | **跌幅已反映** | 近3个月跌幅是否已透支未来1-2个季度的利空？（超跌反弹风险） | pct_52w、近期价格动量、RSI |
 | 2 | **基本面反转** | 基本面是否出现改善信号？（营收/EPS增速触底回升） | EPS趋势方向、营收增速是否回升 |
-| 3 | **轧空风险** | 做空比例是否 > 15%？（高做空比例 = 轧空炸弹） | FINRA Short Interest、IB 融券数据 |
+| 3 | **轧空风险** | 做空比例是否 > 15%？（高做空比例 = 轧空炸弹） | 脚本 `short_pct_of_float` / `short_days_to_cover`；`--options` 的 `put_call_oi_ratio`（>1 = 保护性 put 拥挤）。可借数量与借券费率属券商侧，分析层不取（见数据源边界） |
 | 4 | **内幕交易反向** | 管理层近期是否在增持？（内部人士看好 = 做空反向信号） | web_search insider buying |
 | 5 | **技术面背离** | 价格创新低但成交量萎缩？RSI底背离？（下跌动能衰竭） | 量价关系、RSI趋势 |
 | 6 | **宏观顺风** | 是否存在该标的特有的宏观利好未被覆盖？（降息/政策刺激） | 利率/汇率/政策影响 |
@@ -496,14 +523,39 @@ web_search "{ticker} insider buying selling 2026"
 | `止损位` | 入场价的 5-10% 上方（做空止损应更宽，防轧空），或突破 MA50 |
 | `仓位上限_pct` | 大盘 risk_budget 正常时 5-8%，偏低时 3-5%（做空仓位小于做多） |
 | `建仓方式` | 评分 ≥ 4.0 分 2 批建仓（1/3 底仓 + 反弹加仓）；3.5-3.9 分 1 批轻仓 |
-| `做空工具` | **优先使用 put 期权**（亏损有限），其次融券做空 |
-| `做空比例检查` | 做空前确认做空比例 < 15%，否则标注"高轧空风险"并降级处理 |
+| `做空工具` | **优先使用 put 期权**（亏损有限），其次融券做空——put 合约用 `--options` 取，见下 |
+| `做空比例检查` | 做空前确认做空比例 < 15%（`short_pct_of_float`），否则标注"高轧空风险"并降级处理 |
+
+#### 期权入场（2026-10-18 起有脚本通道）
+
+「优先使用 put 期权」此前**没有任何数据通道**，AI 只能标 `missing` 或 web_fetch 期权页（实测反爬超时）。现在：
+
+```bash
+# 只取 put；自动选短/中/长三档到期日(21/63/126 天)；现价 ±20% 行权价；按未平仓量保留 24 条
+python scripts\get_market_data.py --options TICKER --opt-side put --out tests\options_<TICKER>_<YYYYMMDD>.json
+
+# 指定到期日 / 放宽行权价 / 要 call（做多对冲）
+python scripts\get_market_data.py --options TICKER --opt-expiry 2026-11-21,2027-01-15 --opt-strike-pct 0.30 --opt-side both
+```
+
+| 返回字段 | 用在入场计划的哪里 |
+|---|---|
+| `expiries_available`、`expiry_summary[].days_to_expiry` | 按持有期选到期日（做空 1-2 周 → 最近档；1-3 月 → 中档） |
+| `contracts[].strike` / `moneyness` / `strike_vs_spot_pct` | 选行权价（ATM 成本高、OTM 便宜但需要更大跌幅才兑现） |
+| `contracts[].iv`、`iv_atm_put_median`、`expiry_summary[].iv_median_put` | **IV 高＝权利金贵**；IV 明显高于同档 call 时优先价差而非单腿 |
+| `contracts[].premium_pct_of_spot` | 权利金占现价比 ≈ 粗略成本 → 写入 `入场计划.权利金成本` |
+| `contracts[].breakeven` | 盈亏平衡价；`第一目标` 必须显著优于盈亏平衡，否则该合约不成立 |
+| `contracts[].open_interest` / `volume` / `bid_ask_spread_pct` | 流动性硬门槛：`OI < 500` 或 `点差 > 15%` 的合约**不得写入入场计划** |
+| `put_call_oi_ratio` | > 1 = 保护性 put 拥挤，作为反向信号送进 Step 7.5 反方审查 |
+
+> **前视红线**：期权链只有**当前挂牌合约**，`--end/--as-of` 下脚本直接拒绝（P0-5 类②不可回溯）；历史回放里的期权结论必须标 `point_in_time=false`。缓存 30 分钟，要最新报价加 `--no-cache`。
 
 ### Step 9：汇总输出
 
 按【六、输出模板】生成结构化 JSON 结果。
 
-> **⚠️ 禁止保存 JSON 文件到磁盘**：生成的 JSON 结果**只返回给用户**（由量化系统自动保存为分析报告），不得在本地保留任何中间结果文件。如果 AI 有自动保存中间结果的习惯，请在此步骤关闭。
+> **⚠️ 禁止保存最终报告 JSON 到磁盘**：生成的 JSON 结果**只返回给用户**（由量化系统自动保存为分析报告），不得在本地保留报告副本。
+> **唯一例外（2026-10-18）**：Step 2 / 池外探测的产物**必须**用脚本的 `--out` 写到 `tests/`（供 `--probe-only` 输入与事后核对，`tests/` 不进 git）；被禁止的是**最终报告 JSON** 和 AI 自造的中间缓存/转储文件。
 
 ### Step 10：以 JSON 格式输出（不保存 JSON 文件）
 
@@ -526,6 +578,14 @@ web_search "{ticker} insider buying selling 2026"
 | 池外探测清单（§七） | **`generate_candidate_pool.py --probe-only`**（入口清单在 `pool_entries.json`） | 固定池 `scripts/stock_pool.json` 兜底 |
 
 > **⚠️ 取数铁律（2026-09-13 修订）**：本环境 `web_search` **只返回标题与链接、不返回正文** → 上表所有数据必须用 `get_market_data.py` 或 `web_fetch` 直取；`web_search` 仅用于发现 URL。取不到的数据按 §四 标 `missing`，**不得编造**。
+>
+> **⚠️ 无通道字段纪律（2026-10-18 修订）**：做空比例 / days-to-cover / P/S / PEG / EPS 增速 / FCF 收益率 / EV-EBITDA / 净债务·EBITDA / RSI / MACD / ATR **已由 `get_market_data.py` 一次返回**（见 Step 3-4 字段清单）→ 这些**不再允许 web_fetch**。
+> **期权链 IV / 未平仓合约 / 权利金 / 盈亏平衡自 2026-10-18 起也有通道**（`--options`，见 Step 8）→ 同样禁止 web_fetch 期权页。
+> 仍无脚本通道的只剩：**融券费率与可融券余额**（券商账户侧数据，见下方边界规则，**永久标 `missing`**）、**机构 13F 明细**、**全市场行业中位数**（脚本的 `--sector-median` 只给批次内同板块中位数）。这类字段每只标的最多 `web_fetch` **一次**，失败即标 `missing` 并降一档评分，**禁止换源反复重试**（教训：2026-10-17 逐只 web_fetch finviz / MarketBeat 触发反爬超时，白烧大量轮次；技能内 `finviz-screener` 入口已实测失效并标 `disabled`）。这类字段只有当前快照 → 历史回放（`--as-of`）下必须标 `point_in_time=false`。
+>
+> **数据源边界（2026-10-18 定，不可越界）**：本技能是**分析层**，只允许公开数据源（脚本内的 Yahoo / FRED / SEC EDGAR / ICI / CNN 等通道 + 受限 `web_fetch`）。**禁止依赖 TWS / IB Gateway / 券商 API**——技能必须在没有券商客户端登录的机器上也能完整运行。因此**可借数量、借券费率、做空保证金要求**等账户侧字段一律标 `missing`：分析层只负责用公开做空字段（`short_pct_of_float` / `short_days_to_cover` / `short_interest_prior`）判定**做空拥挤度**，"实际能否借到券、成本多少"由**执行层下单时兜底**（不可借券的订单会被券商拒单），不得为补这几个字段去连券商接口。
+>
+> **⚠️ 输出体积纪律（2026-10-18 新增）**：最终 JSON 每只标的的论证 **≤120 字**；缺失项用枚举码（`SHORT_INT_NA` / `BORROW_NA` / `PEG_NA`）而非整句解释；尽调笔记、反方审查长文不进 JSON，只在正文给结论。脚本产物（候选池 / 指标）用 `--out` 落盘后按需读字段，**不要把整份 JSON 读进上下文**。
 
 ---
 
@@ -672,6 +732,8 @@ AI 完成分析后，必须按以下 JSON 格式返回结果：
 ```
 
 > **候选池摘要字段来源（2026-09-26 起）**：`总候选数` = 脚本 `统计.总数`；`池外探测.{是否执行/入口数/差集候选数/并入数/未通过原因}` = `generate_candidate_pool.py`（generate + probe）输出原样抄录，**AI 不得手填**；`通过基本面过滤` 及之后的漏斗数字仍由 AI 计数（脚本不覆盖 Step 4-7.5）。
+>
+> **2026-10-18 新增可抄字段（只增字段，报告口径不变）**：`审计.指标取数只数` / `审计.elapsed_s`（性能留痕）、`审计.预筛剔除数`、`审计.收尾补全排除数`、`统计.小盘占比达标`、池外探测 `审计.未验证候选数`（差集中未做指标验证的只数，必须如实标注，不得当作已验证）。
 >
 > **做空方向字段映射**：当 `direction = 做空` 时，输出 JSON 的字段结构与做多方向完全一致，但以下字段的内容/含义需按做空逻辑调整：
 >

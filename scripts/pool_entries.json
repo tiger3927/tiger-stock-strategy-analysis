@@ -1,6 +1,6 @@
 {
-  "version": "1.0",
-  "updated_at": "2026-09-26",
+  "version": "1.1",
+  "updated_at": "2026-10-18",
   "note": "美股候选池固定入口清单与降级序（选股操作手册 §2.2/§3.1/§七 代码化）。入口按数组顺序逐个尝试，失败自动降级下一个并留痕；固定池 stock_pool.json 永远是最后兜底。",
   "sector_alias": {
     "AI / 科技": "信息技术",
@@ -86,6 +86,8 @@
     {"name": "etf-iwm", "type": "stockanalysis_etf_holdings", "url": "https://stockanalysis.com/etf/iwm/holdings/"}
   ],
   "probe_extra_entries": [
-    {"name": "finviz-screener", "type": "finviz_screener", "url": "https://finviz.com/screener.ashx?v=111"}
+    {"name": "finviz-screener", "type": "finviz_screener", "url": "https://finviz.com/screener.ashx?v=111",
+     "disabled": true,
+     "disabled_reason": "2026-10-18 实测：页面能抓到(354KB、无 Cloudflare 拦截)但表格已改客户端渲染，HTML 内 0 个 quote.ashx 链接(带筛选参数返回同一页) → 解析必为 0 条，白占一次抓取。做空向差异化改由 get_market_data 新字段(short_pct_of_float / short_days_to_cover / ps_ratio / ev_ebitda / fcf_yield / rsi_14)承担"}
   ]
 }

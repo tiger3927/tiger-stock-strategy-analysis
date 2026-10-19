@@ -112,6 +112,14 @@ web\_search 使用 Tavily 引擎，每月限额 1000 次，超出后 web\_search
 
 > `SKILL.md` 只负责路由和优先级说明；vnpy\_mcp 的具体工具名、参数和返回格式，以 `get_guide` 和 [docs/vnpy\_mcp.md](docs/vnpy_mcp.md) 为准。
 
+### 数据源边界（2026-10-18 定，不可越界）
+
+本技能是**分析层**：市场与基本面数据只走脚本内的公开通道（Yahoo / FRED / SEC EDGAR / ICI / CNN 等）+ 受限 `web_search` / `web_fetch`。
+
+- **禁止依赖 TWS / IB Gateway / 券商 API 取分析数据**（不得把 `ib_insync` 之类引入技能脚本）——技能必须在没有券商客户端登录的机器上也能完整运行，且不把分析职责与执行层耦合。
+- 因此**券商账户侧字段**（可借数量、借券费率、做空保证金要求）在分析层一律标 `missing`：做空拥挤度用公开 `short_pct_of_float` / `short_days_to_cover` / `short_interest_prior` 判定；「能否真的借到券、成本多少」由**执行层下单时兜底**（不可借券的订单会被券商拒单）。
+- 账户 / 持仓 / 委托 / 成交等**账户侧事实**仍按上一节走 `vnpy_mcp` 工具（`get_accounts`、`get_positions` 等）——那是量化系统已建立的连接，与本技能自己去连券商是两回事。
+
 ## 大盘与板块和资金流向分析
 
 本技能支持对**不同交易市场**进行大盘走势、板块轮动和资金流向的综合分析。详细说明见 [docs/大盘与板块和资金流向分析/00\_index.md](docs/大盘与板块和资金流向分析/00_index.md)。
@@ -135,7 +143,7 @@ web\_search 使用 Tavily 引擎，每月限额 1000 次，超出后 web\_search
 - **做多方向**：按照 [美股做多选择.md](docs/美股选股/美股做多选择.md) 中定义的选股逻辑，结合大盘环境，从候选股池中筛选符合「价值+成长混合（GARP）」策略的做多标的，输出评分卡和入场计划。
 - **做空方向**：按照 [美股做空选择.md](docs/美股选股/美股做空选择.md) 中定义的做空逻辑，结合大盘环境，在估值泡沫、基本面恶化或板块轮动过热的标的中筛选做空标的，输出评分卡和入场计划。
 - **候选池**：[选股操作手册.md](docs/美股选股/选股操作手册.md)（候选池**动态生成**规则：板块衍生 / 全网扫描 / 用户指定，由 00\_index Step 2 引用；**每次生成都必须执行 §七 池外探测**）
-- **选股池**：[美股选股池管理.md](docs/调仓/美股/美股选股池管理.md)（固定池数据源 `scripts/stock_pool.json`，校验脚本 `scripts/sync_stock_pool.py`，补 T3 用 `scripts/refill_stock_pool_t3.py`；三层结构 + §6.4 池外探测；**只是种子兜底，不是视野边界**）
+- **选股池**：[美股选股池管理.md](docs/调仓/美股/美股选股池管理.md)（固定池数据源 `scripts/stock_pool.json`，校验脚本 `scripts/sync_stock_pool.py`，补 T3 用 `scripts/refill_stock_pool_t3.py`；三层结构 + §6.4 池外探测 + **§10 历史模式（as-of）回放与前视隔离**——回放沙箱 `pool_snapshot.py` / 评估 `pool_backtest.py` / 成分 as-of `fetch_index_constituents.py`，**做"假如当时执行"的回放必须先读 §10**；**只是种子兜底，不是视野边界**）
 
 详细执行流程见 [docs/美股选股/00\_index.md](docs/美股选股/00_index.md)。
 
@@ -271,15 +279,22 @@ tiger-stock-strategy-analysis 目录下应该有本 SKILL.md，docs 目录，scr
 | 模块                             | 安装命令                                                | 用途                                             |
 | ------------------------------ | --------------------------------------------------- | ---------------------------------------------- |
 | `get_market_data.py`           | `pip install yfinance`                              | 获取结构化价格数据（含均线、52周百分位）                          |
-| `get_market_data.py`           | `pip install requests requests-cache beautifulsoup4 numpy pandas lxml` | HTTP 请求、HTTP 响应缓存（顶层硬依赖）、HTML 解析、数值计算（ATR/CCI/支撑压力位）、DataFrame 数据处理（顶层硬依赖，含 pd.read_html 所需的 lxml） |
+| `get_market_data.py`           | `pip install requests requests-cache beautifulsoup4 numpy pandas lxml` | HTTP 请求、HTML 解析、数值计算（ATR/CCI/支撑压力位）、DataFrame 数据处理（顶层硬依赖，含 pd.read_html 所需的 lxml）。注：requests-cache 为历史遗留依赖，**未启用**（yfinance 1.5.2 拒绝缓存会话）；实际缓存=K线 pkl 30min + info json 12h 两层，`--no-cache` 穿透 |
+| `get_market_data.py`（历史模式） | （无新增依赖）                            | `--end YYYY-MM-DD` 回放取数（period1/period2 + adj_close 复权列 + 独立不可变窗口缓存 `--cache-dir`）；`--fields/--minimal/--retries/--concurrency` 批量控制；缺省不传 = live 行为不变。**v3(2026-10-18)**：`--out <path>` 结果落盘 + stdout 只回一行摘要（不传 = stdout 逐字节不变，保护 subprocess 消费者）；`--sector-median` 批次内同板块 PE/P-S/EV-EBITDA 中位数（opt-in，样本<3 不写）；**修正 `--no-cache` 此前不穿透 12h info 缓存**的缺陷（现两层缓存一致：不读但仍写入） |
+| `get_market_data.py`（v3 新增字段，只增不改） | （无新增依赖） | 每条记录新增：做空 `short_interest` / `short_interest_prior` / `short_pct_of_float`（小数）/ `short_days_to_cover`；估值 `ps_ratio` / `peg_ratio` / `ev_ebitda`（`ev_ebitda_derived` 标记本地推算）/ `earnings_growth` / `profit_margins` / `fcf_yield` / `net_debt_to_ebitda`；技术面 `rsi_14` / `macd` / `macd_signal` / `macd_hist` / `atr_14`（本地由 K 线算，`--end` 下按截止日截断）。做空字段是 Yahoo 双月快照 → `--as-of` 不可回溯，报告标 `point_in_time=false`。**入口已统一强制 stdout/stderr 为 UTF-8**（修 GBK 控制台中文/符号崩溃，即 A1 子进程解码崩溃根因），调用方不再需要 `-X utf8` / `PYTHONIOENCODING` |
+| `get_market_data.py --options`（期权链，2026-10-18 新增） | （无新增依赖，复用既有代理 + crumb 通道） | 期权链取数：`--options TICKER`（`--opt-side put/call/both`、`--opt-expiry`、`--opt-strike-pct`、`--opt-all`、支持 `--out`）。返回 `expiry_summary[]`（DTE / put·call 未平仓量 / IV 中位数）、`contracts[]`（strike / moneyness / iv / OI / volume / bid·ask / `premium_pct_of_spot` / `breakeven` / `bid_ask_spread_pct`）、`put_call_oi_ratio`、`iv_atm_put_median`；30 分钟缓存。**只有当前挂牌合约 → `--end/--as-of` 直接拒绝**（P0-5 类②） |
+| `get_market_data.py --fetch-url web-indicators`（历史模式，P0-6 2026-10-18 新增） | （无新增依赖，FRED CSV + curl_cffi 指纹） | `--end` 下宏观指标回溯层：`CPI`（FRED `CPIAUCSL`/`CPILFESL`，`value`＝同比 + `headline_mom_pct`/`core_yoy_pct`）、`Liquidity`（`WALCL−WTREGEN−RRPONTSYD`，$bn + 三分项）、`FOMC`（`DFEDTARU`/`DFEDTARL` → `target_range`/`range_since`/`last_move`）、`MarginDebt`（FINRA 月度，第三方再加工，`source=direct:third_party:*` + `debit_yoy_pct`/`excess_leverage`）、`Calendar`（FRED 日历 as-of 前 7 天）。实测 `--end 2025-06-30`：**hit 2/14 → 7/14**（加 VIX 族 10/14 可用），9.3 s。`FearGreed`/`FedWatch`/`PutCallRatio`/`Buyback`/`IPO`/`Secondary`/`Earnings` 保持 `asof_unsupported`（源头只有当前快照，PutCall 的 CBOE CSV 实测 403、Yahoo `^PUT` 量纲不符）；历史模式搜索层禁用 → `source_layers=direct:asof-only`，全部 `point_in_time=false` |
 | `get_market_data.py`（可选）     | `pip install curl_cffi`                             | 可选：走代理直调 Yahoo chart API，替代被风控的 yfinance 内部请求；未安装自动降级 |
 | `get_market_data.py`（calendar） | `pip install -U camoufox[geoip]` + `camoufox fetch` | 必须绕过 Cloudflare 获取 ForexFactory 经济日历           |
 | `test_get_market_data.py`      | （无新增依赖）     | `get_market_data.py` 回归测试（构造模拟数据）                         |
 | `tools.py`                     | （纯标准库，无需安装）                                         | JSON 文件读取工具函数                                  |
 | `update_vt_symbol.py`          | （纯标准库，无需安装）                                         | 管理 vt\_symbol\_info.json：新增/修改/删除/查询品种记录（原子写入） |
-| `sync_stock_pool.py`           | （纯标准库，无需安装）                                         | 校验美股选股池数据（stock\_pool.json 结构与统计）           |
-| `refill_stock_pool_t3.py`      | （无新增依赖，pandas / lxml 已随 `get_market_data.py` 安装）                       | 补美股选股池 T3（潜力小盘）：S&P600/400 成分 → 子板块映射 → 取数验证（取数间接依赖 `get_market_data.py`；支持 dry-run / --apply / --only / --per） |
-| `generate_candidate_pool.py` | （无新增依赖，`requests` 已随 `get_market_data.py` 安装；可选 `curl_cffi`，未装自动降级） | 美股候选池生成：入口抓取 + 指标取数 + 筛选与池外探测（取数间接依赖 `get_market_data.py`；支持 `--data-file` 离线 / `--no-network`） |
+| `sync_stock_pool.py`           | （纯标准库，无需安装）                                         | 校验美股选股池数据（stock\_pool.json 结构与统计）；v2 扩展：`--pool-file` 沙箱 / `--as-of` 到期锚定 / `--output json` 机器证据 / tier 数量与 conid 覆盖率校验（默认 warning，`--strict-tiers` 升级） |
+| `refill_stock_pool_t3.py`      | （无新增依赖，pandas / lxml 已随 `get_market_data.py` 安装）                       | 补美股选股池 T3（潜力小盘）：S&P600/400 成分 → 子板块映射 → 取数验证（取数间接依赖 `get_market_data.py`；支持 dry-run / --apply / --only / --per；v2：`--pool-file` 沙箱 / `--as-of` 回放透传 --end，缓存按 as-of 隔离） |
+| `generate_candidate_pool.py` | （无新增依赖，`requests` 已随 `get_market_data.py` 安装；可选 `curl_cffi`，未装自动降级） | 美股候选池生成：入口抓取 + 指标取数 + 筛选与池外探测（取数间接依赖 `get_market_data.py`；支持 `--data-file` 离线 / `--no-network`；v2：`--seed-pool` 沙箱 / `--as-of` 透传 --end / `--no-cache`；**v3(2026-10-18 性能修复)**：`--out` 落盘+一行摘要、`--prefilter-max` 取指标前预筛（`--as-of` 下自动禁用防前视）、`--probe-max-tickers` / `--probe-entries` / `--budget-seconds`、§5.1 分层配额截断（先保小盘名额）、入口去重 + 并发 3 + `pool_entries.json` 的 `disabled` 开关（finviz-screener 实测客户端渲染 0 条已停用）、子进程 UTF-8 容错、`审计` 新增耗时与取数量字段、**候选池记录直接携带做空/估值/技术面字段**（`short_*` / `ps_ratio` / `peg_ratio` / `fcf_yield` / `rsi_14` 等，Step 3+4 不必二次取数）；**P1-3 接线（2026-10-18）**：`--constituents off\|annotate\|filter`（仅 `--as-of` 生效，默认 annotate）按 SEC NPORT-P 官方成分给候选打 `in_constituents` **三态**标记（True＝当期成员 / False＝覆盖范围内但当期非成员＝**幸存者偏差信号** / None＝指数覆盖范围外），`filter` 额外剔除 False；结果新增 `constituents` 块（`holdings_as_of`/`lag_days`/`match_rate`/`判定` 计数，**不含 symbols 明细**防报告膨胀）与 `members_point_in_time`，与 `point_in_time`（榜单页维度）**分开标**；live 路径**完全不 import 不取数** |
+| `pool_snapshot.py`（v2 新增）  | （纯标准库，无需安装）                                         | 选股池回放沙箱：`as-of` 生成回放副本 + 重写 meta 时间戳 + 备份；`restore` 恢复生产；`diff` 换手率。产物落 `<skill>/replay/`，命名红线禁止落 scripts/ |
+| `pool_backtest.py`（v2 新增）  | （依赖 pandas + `get_market_data.py`）                       | 选股池历史回放评估：after/before/随机对照/基准四组，宽窗口一次取数本地切片，horizon 收益 + 波动/Sharpe/回撤/beta + 多日期胜率汇总（`--weight equal\|cap\|tier` / `--missing drop\|zero\|carry` / `--control random:N`）；**P1-3 接线（2026-10-18）**：`--constituents off\|annotate`（默认 annotate）每 as-of 用 SEC NPORT-P 官方成分对照池成员，输出 `survivorship_suspects`（**池里有、当期官方成分没有**）+ `per_tier` 三态计数 + `holdings_as_of`，payload 新增 `members_point_in_time` |
+| `fetch_index_constituents.py`（**P1-3 新增，2026-10-18**） | （无新增依赖；`curl_cffi` 可选，未装自动回落 requests） | **指数/ETF 成分 as-of 取数**（SEC NPORT-P 官方档案，不预回填）：`--as-of` 走**严格双重门控 `reportDate ≤ as_of` 且 `filingDate ≤ as_of`** → 按需实时取 + 按 `accession` 落不可变缓存（跑过即成档案）。参数 `--index sp500|midcap400|all` / `--cik` / `--list-filings` / `--no-diff` / `--alias-file` / `--min-hit` / `--cache-dir` / `--out`。实测：SPY **28 份申报覆盖 2019-09-30..2026-06-30**；`--as-of 2025-06-30` → 持仓期末 **2025-03-31**（**滞后 91 天**，期末后 ~2 个月才公开），成员全集 **503**、映射到 ticker **484（96.2%）**、`added/removed` 就位；缓存命中后 **0.06 s**。**红线**：① 成分滞后 2~4 个月，报告须写明 `holdings_as_of`；② **ETF 持仓 ≠ 指数官方成分**；③ ticker 靠名称匹配，**年份越久匹配率越低**（2021-12-31 实测 86.8%，因改名/被并购/退市），未匹配项保留 `name+cusip`，**不可当成"当时没有这只股票"**；④ IWM 属 series 制申报人（AllSpring Funds Trust，一季多份）**未实现**，需 `--cik` 指定单基金申报人。**已接入回放链（2026-10-18）**：`constituents_for_asof()` 供 `generate_candidate_pool` / `pool_backtest` 调用（覆盖范围参照集＝当期 ∪ 最新一期，用于把指数外标的判 unknown 而非 False），实测 `--as-of 2021-12-31` → 持仓期末 2021-09-30（滞后 92 天）、567 候选中 426 命中 / **93 幸存者嫌疑** / 48 覆盖范围外，`PLTR` 正确判 False；回归 `tests/test_pool_constituents_wiring.py` **12/12** |
 | `rebalance_fetch.py` | `pip install requests`（硬依赖） | 加密货币调仓取数（币安合约 K线 / 逐笔 / 最小成交单位） |
 | `rebalance_tools.py` / `rebalance_audit.py` / `rebalance_acceptance.py` / `rebalance_x.py` | （纯标准库，无需安装） | 调仓工具链：计算与校验门（fund/gap/score/map/verify/exec）+ 源对账审计 + 一键验收 + 探索版 |
 | `sync_crypto_pool.py` | （纯标准库，无需安装） | 校验加密货币选币池数据（crypto_pool.json 结构与统计） |

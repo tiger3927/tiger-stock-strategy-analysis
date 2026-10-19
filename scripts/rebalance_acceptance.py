@@ -37,7 +37,11 @@ FILES = {
 
 
 def run(cmd):
-    r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
+    # A1(2026-10-18): errors="replace" + 子进程 UTF-8，避免 GBK 中文日志导致解码崩溃
+    # （只修解码，不碰本脚本的 as-of/验收逻辑——它在前视任务"确认无需改造"名单内）
+    r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
+                       errors="replace",
+                       env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"})
     try:
         return r.returncode, json.loads(r.stdout), None
     except Exception as e:

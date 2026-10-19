@@ -144,7 +144,9 @@ EXTRA = {
 
 
 def parse_args():
-    opt = {"apply": False, "only": None, "per": PER_SECTOR, "cap": CAP_PER_SECTOR, "refresh": False}
+    opt = {"apply": False, "only": None, "per": PER_SECTOR, "cap": CAP_PER_SECTOR,
+           "refresh": False, "pool_file": POOL_FILE, "as_of": None,
+           "fund": None, "max_add": 0}
     for a in sys.argv[1:]:
         if a == "--apply":
             opt["apply"] = True
@@ -156,6 +158,23 @@ def parse_args():
             opt["per"] = int(a.split("=", 1)[1])
         elif a.startswith("--cap="):
             opt["cap"] = int(a.split("=", 1)[1])
+        elif a.startswith("--pool-file="):
+            opt["pool_file"] = a.split("=", 1)[1]
+        elif a.startswith("--as-of="):
+            opt["as_of"] = a.split("=", 1)[1]
+        elif a.startswith("--fund="):
+            # P1-4（2026-10-19）：回放模式下 T3 市值硬筛改用 fund_D.json 的 as-of 市值
+            # （as-of 股本 × as-of 价，PIT 门控）；不可得（None/unavailable/仅权重兜底）
+            # → 候选判"不可得"剔除，**不得用当前快照市值顶替**（§10.5）。
+            opt["fund"] = a.split("=", 1)[1]
+        elif a.startswith("--max-add="):
+            # 「单次增删不超过 Tier3 总数 20%」：与 review 的剔除合并后的剩余新增额度
+            opt["max_add"] = int(a.split("=", 1)[1])
+        elif a.startswith("--wide="):
+            # 宽窗口目录（run4 链式回放）：价格/日均量全部本地切片（≤D 末根 Close + 近 3 月
+            # 日均 Volume），不再逐月逐 ticker 调 get_market_data --end（34 月 × 候选 ≈ 万次取数
+            # 会被 Yahoo 限流拖垮）；市值仍走 --fund（as-of）。缺 pkl / 无 ≤D bar → 该候选记取数失败。
+            opt["wide"] = a.split("=", 1)[1]
     return opt
 
 
@@ -166,9 +185,23 @@ def load_json(path, default=None):
     return default
 
 
-def fetch_wiki(refresh: bool):
-    """取维基百科成分表（含 GICS Sub-Industry），并缓存到 temp"""
-    cached = None if refresh else load_json(WIKI_CACHE)
+def _wiki_cache_path(as_of):
+    """维基成分缓存按 as-of 分文件（P1-1：当前成分=前视源，回放不得复用 live 缓存）。
+    as_of=None → live 缓存（原文件名，生产行为不变）；as_of 给定 → 独立文件。"""
+    return WIKI_CACHE if not as_of else os.path.join(TEMP_DIR, f"refill_t3_wiki_{as_of}.json")
+
+
+def fetch_wiki(refresh: bool, as_of=None):
+    """取维基百科成分表（含 GICS Sub-Industry），并缓存到 temp。
+
+    注意（P1-1）：维基百科 S&P 600/400 是**当前**成分表，回放下属前视数据源。
+    as_of 模式仍只能取到当前成分（无历史成分接口），因此：
+      - 缓存按 as_of 分文件，绝不复用 live 缓存；
+      - 调用方（main）在 as_of 模式必须把结果标记 point_in_time=false 并提示
+        "成分源不可回溯，回测中 T3 候选来源仅作近似"。
+    """
+    cache_path = _wiki_cache_path(as_of)
+    cached = None if refresh else load_json(cache_path)
     if cached:
         return cached
     out = {}
@@ -179,7 +212,7 @@ def fetch_wiki(refresh: bool):
         out[name] = [{"symbol": r["Symbol"], "name": r["Security"], "sub": r["GICS_Sub-Industry"]}
                      for r in df.to_dict("records")]
     os.makedirs(TEMP_DIR, exist_ok=True)
-    with open(WIKI_CACHE, "w", encoding="utf-8") as f:
+    with open(cache_path, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False)
     return out
 
@@ -226,18 +259,34 @@ def build_candidates(pool, wiki, only, cap, per):
     return cand, cand_sector, existing, skipped
 
 
-def fetch_quotes(cands, refresh):
-    """批量取数（带缓存；失败项重试一次）"""
+def _quote_cache_path(as_of):
+    """取数缓存按 as-of 分文件（P1-1：QUOTE_CACHE 无日期维度，回放不得复用 live 缓存）。
+    as_of=None → live 缓存（原文件名，生产行为不变）。"""
+    return QUOTE_CACHE if not as_of else os.path.join(TEMP_DIR, f"refill_t3_quotes_{as_of}.json")
+
+
+def fetch_quotes(cands, refresh, as_of=None):
+    """批量取数（带缓存；失败项重试一次）。
+
+    as_of 模式（P1-1）：向 get_market_data.py 透传 --end（走历史模式不可变缓存），
+    且本层缓存按 as_of 分文件，避免回放命中 live 30 分钟缓存造成前视。
+    """
     os.makedirs(TEMP_DIR, exist_ok=True)
-    cache = {} if refresh else (load_json(QUOTE_CACHE) or {})
+    quote_cache_path = _quote_cache_path(as_of)
+    cache = {} if refresh else (load_json(quote_cache_path) or {})
     todo = [s for s in cands if yahoo_symbol(s) not in cache]
     print(f"  候选 {len(cands)} 只，缓存命中 {len(cands) - len(todo)} 只，需取数 {len(todo)} 只")
 
     def run(batch):
-        p = subprocess.run(
-            [sys.executable, GETDATA, "--market", "us_stocks", "--tickers", ",".join(batch), "--output", "json"],
-            capture_output=True, text=True, encoding="utf-8",
-        )
+        cmd = [sys.executable, GETDATA, "--market", "us_stocks", "--tickers",
+               ",".join(batch), "--output", "json"]
+        if as_of:
+            cmd += ["--end", as_of]
+        # A1(2026-10-18): errors="replace" + 子进程 UTF-8 —— 严格解码遇 GBK 中文日志会让
+        # 读取线程崩溃、整批结果丢弃（同款 bug 已在 generate_candidate_pool.py 实测触发）
+        p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
+                           errors="replace",
+                           env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"})
         try:
             return json.loads(p.stdout).get("data") or []
         except Exception:
@@ -259,15 +308,22 @@ def fetch_quotes(cands, refresh):
             for r in rows:
                 if not r.get("error"):
                     cache[r.get("ticker")] = r
-    with open(QUOTE_CACHE, "w", encoding="utf-8") as f:
+    with open(quote_cache_path, "w", encoding="utf-8") as f:
         json.dump(cache, f, ensure_ascii=False)
     return cache
 
 
-def select(pool, cand_sector, quotes, per):
-    """按 T3 口径筛选，每子板块按流动性降序取前 per 只"""
+def select(pool, cand_sector, quotes, per, fund=None, max_add=0):
+    """按 T3 口径筛选，每子板块按流动性降序取前 per 只。
+
+    P1-4：fund（fund_D.json）给定时，市值硬筛一律用其 as-of 市值（PIT）；
+    不可得（unavailable / 数据洞 None / 仅 NPORT-P 权重兜底）→ 候选判"不可得"剔除，
+    不用行情接口的当前快照市值顶替（§10.5：不可得 ≠ 不达标，但入池硬筛要求值可得）。
+    max_add>0 时全局新增额度封顶（T3 单次增删 20% 约束，与 review 剔除合并核算）。
+    """
     tiers = pool["sub_sectors"]
     chosen, rejects = {}, {}
+    remaining = max_add  # 全局剩余新增额度（0=不限）
     for sym, (key, sub) in cand_sector.items():
         need = max(0, per - len(tiers[key]["tiers"].get(TARGET_TIER, [])))
         q = quotes.get(yahoo_symbol(sym))
@@ -277,8 +333,21 @@ def select(pool, cand_sector, quotes, per):
         if q.get("error"):
             rejects.setdefault(key, []).append((sym, f"取数 error: {q['error']}"))
             continue
-        mc, px, av = q.get("market_cap"), q.get("price"), q.get("avg_volume")
+        px, av = q.get("price"), q.get("avg_volume")
         liq = (av or 0) * (px or 0)
+        if fund:
+            fv = (fund.get("tickers") or {}).get(sym) or {}
+            mc = fv.get("market_cap_as_of")
+            if fv.get("market_cap_as_of_approx"):
+                rejects.setdefault(key, []).append(
+                    (sym, "市值不可得（仅 NPORT-P 相对权重兜底，不可判绝对档位 $1~5B）"))
+                continue
+            if fv.get("available") is False or mc is None:
+                rejects.setdefault(key, []).append(
+                    (sym, "市值不可得（fund as-of 缺失/unavailable，不用当前值顶替）"))
+                continue
+        else:
+            mc = q.get("market_cap")
         if not mc or mc < MCAP_MIN:
             rejects.setdefault(key, []).append((sym, f"市值 {mc}"))
             continue
@@ -292,10 +361,21 @@ def select(pool, cand_sector, quotes, per):
             rejects.setdefault(key, []).append((sym, f"日均成交额 {liq / 1e6:.1f}M"))
             continue
         chosen.setdefault(key, []).append((sym, mc, liq, px, q.get("industry")))
-    for key in list(chosen):
+    for key in sorted(chosen):
         need = max(0, per - len(tiers[key]["tiers"].get(TARGET_TIER, [])))
         chosen[key].sort(key=lambda x: -x[2])
-        chosen[key] = chosen[key][:need]
+        if remaining <= 0:
+            cap = 0
+            for s, mc, liq, px, ind in chosen[key][:need]:
+                rejects.setdefault(key, []).append((s, "全局新增额度封顶（T3 单次增删 20%）"))
+        else:
+            cap = min(need, remaining)
+            if need > remaining:
+                # max_add 封顶导致本板块取不满 need → 留痕（原实现静默截断）
+                for s, mc, liq, px, ind in chosen[key][remaining:need]:
+                    rejects.setdefault(key, []).append((s, "全局新增额度封顶（T3 单次增删 20%）"))
+        chosen[key] = chosen[key][:cap]
+        remaining -= len(chosen[key])
     return chosen, rejects
 
 
@@ -325,17 +405,23 @@ def report(pool, chosen, rejects, skipped, per):
 
 def main():
     opt = parse_args()
-    pool = load_json(POOL_FILE)
+    pool_file = opt["pool_file"]
+    as_of = opt["as_of"]
+    pool = load_json(pool_file)
     if not pool:
-        print(f"❌ 找不到 {POOL_FILE}")
+        print(f"❌ 找不到 {pool_file}")
         sys.exit(1)
 
     print("=" * 60)
-    print("美股选股池 T3 补池工具" + ("（APPLY 写回）" if opt["apply"] else "（dry-run 预演）"))
+    print("美股选股池 T3 补池工具" + ("（APPLY 写回）" if opt["apply"] else "（dry-run 预演）")
+          + (f"  [回放模式 as-of={as_of}]" if as_of else ""))
     print("=" * 60)
+    if as_of:
+        print("⚠️  回放模式：维基成分源只有当前列表（不可回溯）→ 候选来源 point_in_time=false，"
+              "回测中仅作近似；取数走 --end 历史模式，缓存按 as-of 隔离。")
 
     print("\n[1/5] 取候选来源（维基百科 S&P 600 / 400）...")
-    wiki = fetch_wiki(opt["refresh"])
+    wiki = fetch_wiki(opt["refresh"], as_of=as_of)
     print(f"  S&P600 {len(wiki['SP600'])} 家 / S&P400 {len(wiki['SP400'])} 家")
 
     print("\n[2/5] 组候选（人工清单优先 + GICS 子行业铺开）...")
@@ -343,11 +429,37 @@ def main():
     print(f"  候选 {len(cand)} 只，覆盖子板块 {len({v[0] for v in cand_sector.values()})} 个，"
           f"池内已有 {len(existing)} 只不重复")
 
-    print("\n[3/5] 批量取数验证（get_market_data.py）...")
-    quotes = fetch_quotes(cand, opt["refresh"])
+    if opt.get("wide"):
+        if not opt.get("fund"):
+            print("错误: --wide 需要同时给 --fund（市值源 = fund as-of 市值；宽窗口只有价/量，没有市值）")
+            return 2
+        print("\n[3/5] 批量取数验证（宽窗口本地切片：≤D 末根 Close + 近 3 月日均 Volume，零网络）...")
+        import review_tiers_asof as rv
+        wm = rv.wide_metrics(opt["wide"], as_of, sorted(cand))
+        quotes = {}
+        for s in cand:
+            m = wm.get(s)
+            y = yahoo_symbol(s)
+            if m and m.get("close") is not None:
+                quotes[y] = {"price": m["close"],
+                             "avg_volume": (m["liq"] / m["close"]) if m.get("liq") else None,
+                             "market_cap": None}
+            else:
+                quotes[y] = {"error": "宽窗口无数据（pkl 缺失或无 ≤as-of 的 bar）"}
+        miss = sum(1 for s in cand if (wm.get(s) or {}).get("close") is None)
+        print(f"  宽窗口覆盖 {len(cand) - miss}/{len(cand)} 只（缺 {miss} 只 → 记取数失败，不用网络顶替）")
+    else:
+        print("\n[3/5] 批量取数验证（get_market_data.py）...")
+        quotes = fetch_quotes(cand, opt["refresh"], as_of=as_of)
 
-    print("\n[4/5] 按 T3 口径筛选（市值 $1B-$5B / 价格 ≥ $3 / 日均成交额 ≥ $5M）...")
-    chosen, rejects = select(pool, cand_sector, quotes, opt["per"])
+    fund = load_json(opt["fund"]) if opt.get("fund") else None
+    if opt["as_of"] and not fund:
+        print("⚠️  回放模式未给 --fund：T3 市值硬筛仍在用行情接口市值（as-of 价 × 当前股本，G7 降级口径）；"
+              "市值类剔除理由按 §10.5 记「待人工确认」。建议传 fund_<D>.json。")
+    mcap_src = "fund_D as-of 市值（P1-4）" if fund else "行情接口市值"
+    print(f"\n[4/5] 按 T3 口径筛选（市值 $1~5B / 价格 ≥ $3 / 日均成交额 ≥ $5M；市值源: {mcap_src}）...")
+    chosen, rejects = select(pool, cand_sector, quotes, opt["per"],
+                              fund=fund, max_add=opt.get("max_add") or 0)
     report(pool, chosen, rejects, skipped, opt["per"])
 
     if not opt["apply"]:
@@ -360,8 +472,8 @@ def main():
     for key, picks in chosen.items():
         tiers[key]["tiers"].setdefault(TARGET_TIER, [])
         tiers[key]["tiers"][TARGET_TIER].extend(s[0] for s in picks)
-    # previous_snapshot 记录**更新前**的摘要（换手率统计用）
-    pool["meta"]["previous_snapshot"] = {
+    # previous_snapshot 记录**更新前**的摘要（换手率统计用；三方消费契约保持不变）
+    snapshot = {
         "saved_at": pool["meta"].get("tier3_updated_at", ""),
         "tier_counts_before": before,
         "tier1_tickers": sorted({x for i in tiers.values() for x in i["tiers"].get("T1", [])}),
@@ -371,16 +483,26 @@ def main():
             - {s[0] for picks in chosen.values() for s in picks}
         ),
     }
-    import datetime
-    pool["meta"]["tier3_updated_at"] = datetime.date.today().isoformat()
-    with open(POOL_FILE, "w", encoding="utf-8") as f:
+    pool["meta"]["previous_snapshot"] = snapshot
+    # P2-2 增量兼容：追加 meta.snapshots[]（保留 previous_snapshot 原样，三方消费方迁移后再评估废弃）
+    snaps = pool["meta"].setdefault("snapshots", [])
+    snaps.append(dict(snapshot, appended_at=(as_of or __import__("datetime").date.today().isoformat())))
+    snaps[:] = snaps[-12:]  # 只留最近 12 次，防 meta 膨胀
+
+    pool["meta"]["tier3_updated_at"] = as_of or __import__("datetime").date.today().isoformat()
+    with open(pool_file, "w", encoding="utf-8") as f:
         json.dump(pool, f, ensure_ascii=False, indent=2)
     after = {t: sum(len(i["tiers"].get(t, [])) for i in tiers.values()) for t in ("T1", "T2", "T3")}
     print(f"  已写入：T1 {before['T1']}→{after['T1']} / T2 {before['T2']}→{after['T2']} / "
           f"T3 {before['T3']}→{after['T3']}，tier3_updated_at={pool['meta']['tier3_updated_at']}")
 
     print("\n  运行校验脚本 sync_stock_pool.py ...")
-    p = subprocess.run([sys.executable, SYNC], capture_output=True, text=True, encoding="utf-8")
+    sync_cmd = [sys.executable, SYNC, "--pool-file", pool_file]
+    if as_of:
+        sync_cmd += ["--as-of", as_of]
+    p = subprocess.run(sync_cmd, capture_output=True, text=True, encoding="utf-8",
+                       errors="replace",
+                       env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"})
     print(p.stdout or p.stderr)
     print("=" * 60)
 
