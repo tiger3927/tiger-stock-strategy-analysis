@@ -1,6 +1,6 @@
 ---
 name: "tiger-stock-strategy-analysis"
-description: "股票量化策略分析工具：为 vnpy 量化软件提供策略分析和下单前审核。支持智能马丁格尔策略(openclaw-martin)、多信号权重评分趋势策略（Multi\_Signal\_Treand）、多用途网格策略（趋势/反转/波动收波三意图）；大盘与板块和资金流向分析；做多做空选股；板块轮动调仓；vnpy量化系统全局配置答疑与修改；"
+description: "股票量化策略分析工具：为 vnpy 量化软件提供策略分析和下单前审核。支持智能马丁格尔策略(openclaw-martin)、多信号权重评分趋势策略（Multi\_Signal\_Treand）、多用途网格策略（趋势/反转/波动收波三意图）；大盘与板块和资金流向分析；做多做空选股；板块轮动调仓；板块多空选股跟随；vnpy量化系统全局配置答疑与修改；"
 ---
 
 # tiger-stock-strategy-analysis
@@ -143,7 +143,7 @@ web\_search 使用 Tavily 引擎，每月限额 1000 次，超出后 web\_search
 - **做多方向**：按照 [美股做多选择.md](docs/美股选股/美股做多选择.md) 中定义的选股逻辑，结合大盘环境，从候选股池中筛选符合「价值+成长混合（GARP）」策略的做多标的，输出评分卡和入场计划。
 - **做空方向**：按照 [美股做空选择.md](docs/美股选股/美股做空选择.md) 中定义的做空逻辑，结合大盘环境，在估值泡沫、基本面恶化或板块轮动过热的标的中筛选做空标的，输出评分卡和入场计划。
 - **候选池**：[选股操作手册.md](docs/美股选股/选股操作手册.md)（候选池**动态生成**规则：板块衍生 / 全网扫描 / 用户指定，由 00\_index Step 2 引用；**每次生成都必须执行 §七 池外探测**）
-- **选股池**：[美股选股池管理.md](docs/调仓/美股/美股选股池管理.md)（固定池数据源 `scripts/stock_pool.json`，校验脚本 `scripts/sync_stock_pool.py`，补 T3 用 `scripts/refill_stock_pool_t3.py`；三层结构 + §6.4 池外探测 + **§10 历史模式（as-of）回放与前视隔离**——回放沙箱 `pool_snapshot.py` / 评估 `pool_backtest.py` / 成分 as-of `fetch_index_constituents.py`，**做"假如当时执行"的回放必须先读 §10**；**只是种子兜底，不是视野边界**）
+- **选股池**：[美股选股池管理.md](docs/调仓/美股/美股选股池管理.md)（固定池数据源 `scripts/stock_pool.json`，校验脚本 `scripts/sync_stock_pool.py`，补 T3 用 `scripts/refill_stock_pool_t3.py`；三层结构 + §6.4 池外探测 + **§10 历史模式（as-of）回放与前视隔离**——回放沙箱 `pool_snapshot.py` / 评估 `pool_backtest.py` / 成分 as-of `fetch_index_constituents.py`，**做"假如当时执行"的回放必须先读 §10**；**§11 量化打分与 Top-N 选出**——`screen_select.py` 对池/指数宇宙做 PIT 因子打分，**按用户设定选股数量**输出 Top-N 买入候选（冻结参数 `screen_params_v3/v4.json`，产物落 `screening/`，红线见 §11.3）；**只是种子兜底，不是视野边界**）
 
 详细执行流程见 [docs/美股选股/00\_index.md](docs/美股选股/00_index.md)。
 
@@ -176,6 +176,15 @@ web\_search 使用 Tavily 引擎，每月限额 1000 次，超出后 web\_search
 详细说明见 [docs/调仓/美股/00_index.md](docs/调仓/美股/00_index.md)（美股板块轮动调仓文档组：索引 + 七层方法论 + 策略资金分配 + AI 调仓输出模板，共 13 篇，消费固定池 `scripts/stock_pool.json`；池子本身的新增/删除/池外探测见 [美股选股池管理.md](docs/调仓/美股/美股选股池管理.md)）。
 
 **任务完成标准（一次闭环，00_index §4）**：任务「生成调仓报告」必须一次执行完——取数 → fund → gap → 评分/映射 → assemble → AI 填 调仓指令/持仓映射/文本字段 → **verify「校验」= 通过** → 交付最终报告 JSON。中间产物（各子命令 JSON、assemble 骨架）均不是任务完成；「无法校验/不通过」≠ 通过，指令集为空的"全绿"verify 是空洞通过。
+
+## 美股板块多空选股跟随
+
+**美股**「报告 → 持仓」执行层：选股报告（≥4.0 分）出标的，大盘报告出方向闸门（看多 80/20、震荡 50/50、看空 20/80），`PAIR-GRID-*` 多用途网格策略出持仓；纪律 = 10 日强平 + 开盘跳空>2% 机械跳过。
+
+详细说明见 [docs/板块多空选股跟随/美股板块多空选股跟随.md](docs/板块多空选股跟随/美股板块多空选股跟随.md)。
+
+- 必填入参：**可用持仓总金额**（美元），未提供先问，不得猜、不得用账户余额顶替。
+- 只输出调整计划 JSON（说明性）；用户确认后才按"强平 → 调整 → 新建 → 删除"调用 vnpy\_mcp 执行。
 
 ## vnpy整体持仓分析与风控
 
@@ -290,6 +299,7 @@ tiger-stock-strategy-analysis 目录下应该有本 SKILL.md，docs 目录，scr
 | `tools.py`                     | （纯标准库，无需安装）                                         | JSON 文件读取工具函数                                  |
 | `update_vt_symbol.py`          | （纯标准库，无需安装）                                         | 管理 vt\_symbol\_info.json：新增/修改/删除/查询品种记录（原子写入） |
 | `sync_stock_pool.py`           | （纯标准库，无需安装）                                         | 校验美股选股池数据（stock\_pool.json 结构与统计）；v2 扩展：`--pool-file` 沙箱 / `--as-of` 到期锚定 / `--output json` 机器证据 / tier 数量与 conid 覆盖率校验（默认 warning，`--strict-tiers` 升级） |
+| `screen_select.py`（**2026-10-31 新增**） | （纯标准库 + `get_market_data.py` 取价）                   | **选股池量化打分 Top-N**（§11）：`--universe pool\|index\|file` / `--top-n`（用户设定，<20 拒绝）/ `--params` 冻结参数集（sha 入产物）/ `--as-of` 历史锚定 / 批产 `--start --end`；buffer 带自动接上月名单；产物落 `<skill>/screening/`。配套：`screen_engine.py`（replay 引擎晋升，回归 24/24 零漂移）、`screen_backtest.py`（名单回测）、`screen_params_v3/v4.json`（冻结，禁改） |
 | `refill_stock_pool_t3.py`      | （无新增依赖，pandas / lxml 已随 `get_market_data.py` 安装）                       | 补美股选股池 T3（潜力小盘）：S&P600/400 成分 → 子板块映射 → 取数验证（取数间接依赖 `get_market_data.py`；支持 dry-run / --apply / --only / --per；v2：`--pool-file` 沙箱 / `--as-of` 回放透传 --end，缓存按 as-of 隔离） |
 | `generate_candidate_pool.py` | （无新增依赖，`requests` 已随 `get_market_data.py` 安装；可选 `curl_cffi`，未装自动降级） | 美股候选池生成：入口抓取 + 指标取数 + 筛选与池外探测（取数间接依赖 `get_market_data.py`；支持 `--data-file` 离线 / `--no-network`；v2：`--seed-pool` 沙箱 / `--as-of` 透传 --end / `--no-cache`；**v3(2026-10-18 性能修复)**：`--out` 落盘+一行摘要、`--prefilter-max` 取指标前预筛（`--as-of` 下自动禁用防前视）、`--probe-max-tickers` / `--probe-entries` / `--budget-seconds`、§5.1 分层配额截断（先保小盘名额）、入口去重 + 并发 3 + `pool_entries.json` 的 `disabled` 开关（finviz-screener 实测客户端渲染 0 条已停用）、子进程 UTF-8 容错、`审计` 新增耗时与取数量字段、**候选池记录直接携带做空/估值/技术面字段**（`short_*` / `ps_ratio` / `peg_ratio` / `fcf_yield` / `rsi_14` 等，Step 3+4 不必二次取数）；**P1-3 接线（2026-10-18）**：`--constituents off\|annotate\|filter`（仅 `--as-of` 生效，默认 annotate）按 SEC NPORT-P 官方成分给候选打 `in_constituents` **三态**标记（True＝当期成员 / False＝覆盖范围内但当期非成员＝**幸存者偏差信号** / None＝指数覆盖范围外），`filter` 额外剔除 False；结果新增 `constituents` 块（`holdings_as_of`/`lag_days`/`match_rate`/`判定` 计数，**不含 symbols 明细**防报告膨胀）与 `members_point_in_time`，与 `point_in_time`（榜单页维度）**分开标**；live 路径**完全不 import 不取数** |
 | `pool_snapshot.py`（v2 新增）  | （纯标准库，无需安装）                                         | 选股池回放沙箱：`as-of` 生成回放副本 + 重写 meta 时间戳 + 备份；`restore` 恢复生产；`diff` 换手率。产物落 `<skill>/replay/`，命名红线禁止落 scripts/ |

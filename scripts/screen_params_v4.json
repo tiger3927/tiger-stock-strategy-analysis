@@ -1,0 +1,27 @@
+{
+  "_note": "v4 参数冻结（2026-10-30 17:5x）。= v4_grid 预注册 8 格中的 IS 最优格 W4g0（协议先于结果写死：IS=2024-01..2025-03 累计超额最高者胜出；OOS 与 WF 只验证不参与选择）。胜出依据：IS +18.58pp（8 格第一）→ OOS +61.57pp（协议外验证，未回落）→ WF 复核 21 月 +51.2pp、16/21 月选 W4 系。gates 未采纳：W4g1 OOS 更高(+66.8)但 IS 更低(11.4)，按协议不选（如实记录：门在 OOS 更稳，若未来重冻结须重跑网格）。n=20 由用户指定；集中风险实测=2026-07 单月 -27.5%、超额回撤 -28.2%。",
+  "universe": "const_D = SPY∪MDY as-of 成分（同 v1-v3）",
+  "top_n": 20,
+  "buffer_mult": 1.3,
+  "cost_bps_per_side": 5,
+  "filters": {
+    "min_bars": 253,
+    "min_price": 3.0,
+    "min_liq_bars": 63,
+    "min_liq": 10000000
+  },
+  "split": {
+    "candidate_ratios": [1.2, 1.25, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10, 15, 20, 25, 30],
+    "tol": 0.03
+  },
+  "momentum": { "skip_bars": 21, "lookback_bars": 231 },
+  "b1_renormalize": true,
+  "b2_groups": true,
+  "groups": {
+    "momentum": { "w": 0.85, "items": ["mom_12_1", "mom_6", "rs_spy_6"] },
+    "trend":    { "w": 0.05, "items": ["ma200_ratio", "ma50_gt_ma200", "dist_52w_high"] },
+    "volume":   { "w": 0.05, "items": ["vol_ratio_3_12"] },
+    "risk":     { "w": 0.05, "items": ["vol_6m_low"] }
+  },
+  "_gates": "未启用（W4g0）。可用选项见 v4_grid/params_W4g1.json：mom_12_1>0 且 ma200_ratio>0"
+}
